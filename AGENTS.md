@@ -54,23 +54,85 @@ FOR EACH STAGE OF REVIEW: output the explanation and pros and cons of each stage
 
 ## Project Overview
 
-PyXTrackers is a high-performance Cython reimplementation of three multi-object tracking algorithms: **SORT**, **ByteTrack**, and **OC-SORT**. The goal is numerical equivalence with the Python originals while achieving significant speedups (5.9x+ demonstrated for ByteTrack).
+PyXTrackers is a high-performance Cython reimplementation of three multi-object tracking algorithms: **SORT**, **ByteTrack**, and **OC-SORT**.
+The goal is numerical equivalence with the Python originals while achieving significant speedups.
+It is a standalone pip-installable package under the `pyxtrackers` namespace.
 
-This repo is extracted from a larger project called **polyis**. The `setup.py`, tests, and import paths still reference the `polyis` namespace (e.g., `polyis.tracker.bytetrack.cython.bytetrack`). The Cython source files live in `trackers/` here but are compiled as part of the polyis package.
+## Package Name & Namespace
 
-## Build Commands
+```python
+from pyxtrackers import Sort, BYTETracker, OCSort
+
+# Or directly
+from pyxtrackers.sort import Sort
+from pyxtrackers.bytetrack import BYTETracker
+from pyxtrackers.ocsort import OCSort
+```
+
+## Development Workflow (uv)
+
+uv is the recommended project manager. It handles environment creation, dependency resolution, and lockfile management. The build backend is setuptools (uv delegates all compilation to it).
+
+**Important:** `uv sync` installs the project in editable mode but does **not** compile Cython extensions. You must run `build_ext` separately after every sync.
+
+### First-Time Setup
 
 ```bash
-# Build all Cython extensions (builds inplace by default)
-python setup.py build_ext
+uv sync                                  # Creates .venv, installs deps + editable project
+uv run python setup.py build_ext         # Compile Cython extensions (.pyx → .so)
 ```
+
+### Common Commands
+
+```bash
+uv run pytest tests/ -v                  # Run tests
+uv run python setup.py build_ext         # Rebuild extensions after .pyx changes
+uv run python setup.py clean             # Remove .c/.cpp/.html/.so build artifacts
+uv run python setup.py clean_annotate    # Remove only .c/.cpp/.html (keep .so)
+```
+
+### Managing Dependencies
+
+```bash
+uv add <package>                         # Add runtime dependency
+uv add --dev <package>                   # Add dev dependency (to [dependency-groups].dev)
+uv add --group lint <package>            # Add to a custom group
+uv remove <package>                      # Remove dependency
+```
+
+All `uv add`/`uv remove` commands update both `pyproject.toml` and `uv.lock` atomically.
+
+### Updating Dependencies
+
+```bash
+uv lock --upgrade                        # Upgrade all deps to latest compatible versions
+uv lock --upgrade-package numpy          # Upgrade a single package
+uv sync                                  # Apply lockfile changes to environment
+uv lock --check                          # Validate lockfile is current (for CI)
+```
+
+### Alternative: pip Install
+
+```bash
+pip install -e .                         # Editable install (triggers build_ext)
+pip install .                            # Regular install
+```
+
+### CI Notes
+
+- Always commit `uv.lock` to version control.
+- Use `uv sync --locked` in CI to fail if the lockfile is stale.
+- Use `uv sync --frozen` in Docker builds to skip lockfile validation.
+- Pin the uv version in CI for reproducibility (e.g., `astral-sh/setup-uv@v7` with `version: "0.10.4"`).
 
 ## Running Tests
 
 Tests compare Python reference implementations against Cython implementations on shared detection data.
 
 ```bash
-python -m pytest tests/ -v  # all tests
+uv run pytest                            # All tests
+uv run pytest tests/ -v                  # Verbose
+uv run pytest tests/test_sort_comparison.py -v   # Single file
 ```
 
 Numerical comparison tolerance: 1e-6 pixels.
@@ -79,19 +141,46 @@ Numerical comparison tolerance: 1e-6 pixels.
 
 ### Three-Layer Design
 
-1. **`references/`** — Pure Python reference implementations (the originals being reimplemented)
-2. **`trackers/`** — Cython reimplementations organized by tracker algorithm
+1. **`pyxtrackers/`** — Cython reimplementations (the installable package)
+2. **`references/`** — Pure Python reference implementations (for testing, not installed)
 3. **`tests/`** — Comparison tests that run both implementations on identical input and verify equivalence
 
-### Per-Tracker Module Structure
+### Installable Package Structure
 
-Each tracker in `trackers/` follows the same pattern:
-- **`<tracker>.pyx`** — Main tracker logic (track management, update loop)
-- **`kalman_filter.pyx` / `.pxd`** — Kalman filter with C-level interface via `.pxd`
-- **`matching.pyx` or `association.pyx` / `.pxd`** — IOU computation + linear assignment (LAPJV)
-- Optional: `.pyi` type stubs, Python wrapper files
+```
+pyxtrackers/
+├── __init__.py              # Re-exports Sort, BYTETracker, OCSort
+├── sort/
+│   ├── __init__.py          # Re-exports Sort
+│   ├── sort.pyx             # Main SORT tracker
+│   ├── sort.pyi             # Type stubs
+│   ├── kalman_filter.pyx    # 7D Kalman filter
+│   └── kalman_filter.pxd    # C-level interface
+├── bytetrack/
+│   ├── __init__.py          # Re-exports BYTETracker
+│   ├── bytetrack.pyx        # Main ByteTrack tracker
+│   ├── kalman_filter.pyx    # 8D Kalman filter
+│   ├── kalman_filter.pxd
+│   ├── matching.pyx         # IOU + linear assignment
+│   └── matching.pxd
+└── ocsort/
+    ├── __init__.py           # Re-exports OCSort (wrapper)
+    ├── ocsort.pyx            # Main OC-SORT tracker
+    ├── ocsort.pyi            # Type stubs
+    ├── ocsort_wrapper.py     # Python wrapper for SORT-compatible interface
+    ├── kalman_filter.pyx     # 7D Kalman filter with freeze/unfreeze
+    ├── kalman_filter.pxd
+    ├── association.pyx       # IOU + linear assignment
+    └── association.pxd
+```
 
 `.pxd` files expose `cdef` functions/structs for cross-module `cimport` without Python overhead.
+
+### Build System
+
+- **`pyproject.toml`** — Package metadata (PEP 621), build deps, uv config
+- **`setup.py`** — Cython extension definitions (setuptools build backend)
+- **`vendor/lapjv/`** — Vendored LAPJV C++ linear assignment solver
 
 ### Tracker Specifics
 
@@ -121,9 +210,10 @@ ByteTrack IOU uses PASCAL VOC formula (+1 to dimensions); SORT/OC-SORT use stand
 
 ### External Dependencies
 
-- **LAPJV** (`modules/lap/_lapjv_cpp/lapjv.cpp`): C++ linear assignment solver linked at compile time
-- **NumPy**: Array interfaces and C headers for compilation
+- **LAPJV** (`vendor/lapjv/lapjv.cpp`): Vendored C++ linear assignment solver, linked at compile time
+- **NumPy**: Runtime dependency; C headers used for compilation
 - **Cython**: Build-time requirement
+- **setuptools**: Build backend
 
 ### Track Lifecycle (all trackers)
 

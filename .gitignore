@@ -10,3 +10,6 @@ pyxtrackers/**/*.html
 build/
 dist/
 *.egg-info/
+
+# Virtual environments
+.venv/

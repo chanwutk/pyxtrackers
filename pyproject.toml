@@ -13,10 +13,12 @@ dependencies = [
     "numpy>=2.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
+    "cython>=3.0",
     "pytest>=7.0",
-    "Cython>=3.0",
+    "filterpy>=1.4",
+    "lap>=0.5",
 ]
 
 [tool.setuptools.packages.find]
@@ -24,3 +26,6 @@ include = ["pyxtrackers*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+default-groups = ["dev"]

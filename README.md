@@ -1,8 +1,8 @@
-# PyXTrackers
+# PyxTrackers
 
 High-performance Cython implementations of state-of-the-art multi-object tracking algorithms.
 
-PyXTrackers provides drop-in replacements for three widely used MOT trackers, reimplemented in Cython for significant speedups while maintaining numerical equivalence with the original Python implementations.
+PyxTrackers provides drop-in replacements for three widely used MOT trackers, reimplemented in Cython for significant speedups while maintaining numerical equivalence with the original Python implementations.
 
 ## Supported Trackers
 

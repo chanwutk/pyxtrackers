@@ -132,7 +132,7 @@ uv run pytest
 - [ ] Add scalability tests (runtime when scaling the number of detections/frames, runtime per frame for different number of detections).
 - [ ] Complete migration to uv for project management.
 - [ ] Add GitHub Actions CI to test across environments (pyenv, uv, conda, poetry).
-- [ ] Make this package available in PyPI and possibly conda.
+- [ ] Make this package available in PyPI and possibly conda. Consideration: we should pre-build the binary; based on whether the users have their own C compiler, we may distribute the prebuit version.
 - [ ] Add CLI support.
 
 ## License

@@ -8,9 +8,9 @@ PyxTrackers provides drop-in replacements for three widely used MOT trackers, re
 
 | Tracker | Description | Paper | GitHub |
 |---------|-------------|-------|--------|
-| **SORT** | Simple Online and Realtime Tracking | [Bewley et al., 2016](https://arxiv.org/abs/1602.00763) | https://github.com/abewley/sort |
-| **ByteTrack** | Multi-Object Tracking by Associating Every Detection Box | [Zhang et al., 2022](https://arxiv.org/abs/2110.06864) | https://github.com/FoundationVision/ByteTrack |
-| **OC-SORT** | Observation-Centric SORT | [Cao et al., 2023](https://arxiv.org/abs/2203.14360) | https://github.com/noahcao/OC_SORT |
+| **SORT** | Simple Online and Realtime Tracking | [Bewley et al., 2016](https://arxiv.org/abs/1602.00763) | [abewley/sort](https://github.com/abewley/sort) |
+| **ByteTrack** | Multi-Object Tracking by Associating Every Detection Box | [Zhang et al., 2022](https://arxiv.org/abs/2110.06864) | [FoundationVision/ByteTrack](https://github.com/FoundationVision/ByteTrack) |
+| **OC-SORT** | Observation-Centric SORT | [Cao et al., 2023](https://arxiv.org/abs/2203.14360) | [noahcao/OC_SORT](https://github.com/noahcao/OC_SORT) |
 
 ## Installation
 

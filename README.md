@@ -128,11 +128,12 @@ uv run pytest
 
 ## Roadmap
 
-- [ ] Clean up the tracker interface
-- [ ] Add scalability tests (runtime when scaling the number of detections/frames, runtime per frame for different number of detections)
-- [ ] Complete migration to uv for project management
-- [ ] Add GitHub Actions CI to test across environments (pyenv, uv, conda, poetry)
-- [ ] Add CLI support
+- [ ] Clean up the tracker interface.
+- [ ] Add scalability tests (runtime when scaling the number of detections/frames, runtime per frame for different number of detections).
+- [ ] Complete migration to uv for project management.
+- [ ] Add GitHub Actions CI to test across environments (pyenv, uv, conda, poetry).
+- [ ] Make this package available in PyPI and possibly conda.
+- [ ] Add CLI support.
 
 ## License
 

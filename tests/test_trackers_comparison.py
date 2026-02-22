@@ -21,16 +21,12 @@ import pytest
 import numpy as np
 import numpy.typing as npt
 
-from polyis.b3d.sort import Sort as SortB3D
-from polyis.tracker.sort.cython.sort import Sort as SortCython  # type: ignore
-# from polyis.tracker.sort.cython.sort import reset_tracker_count as reset_sort_count
-from polyis.tracker.ocsort.ocsort import OCSort as OCSortPython
-from polyis.tracker.ocsort.cython.ocsort import OCSort as OCSortCython  # type: ignore
-# from polyis.tracker.ocsort.cython.ocsort import reset_tracker_count as reset_ocsort_count
-from polyis.tracker.bytetrack.byte_tracker import BYTETracker as BYTETrackerPython
-from polyis.tracker.bytetrack.cython.bytetrack import BYTETracker as BYTETrackerCython  # type: ignore
-# from polyis.tracker.bytetrack.cython.bytetrack import reset_tracker_count  # type: ignore
-from polyis.utilities import CACHE_DIR, get_config
+from references.sort.sort import Sort as SortB3D
+from pyxtrackers.sort.sort import Sort as SortCython  # type: ignore
+from references.ocsort.ocsort import OCSort as OCSortPython
+from pyxtrackers.ocsort.ocsort import OCSort as OCSortCython  # type: ignore
+from references.bytetrack.byte_tracker import BYTETracker as BYTETrackerPython
+from pyxtrackers.bytetrack.bytetrack import BYTETracker as BYTETrackerCython  # type: ignore
 
 
 def load_detection_results(detection_path: str) -> list[dict]:
@@ -390,13 +386,9 @@ def test_trackers_comparison():
     5. Compares performance across all implementations
     """
     
-    # Load configuration
-    config = get_config()
-    cache_dir = config['DATA']['CACHE_DIR']
-    
     # Path to detection results file
     detection_path = os.path.join(
-        cache_dir, 'jnc0', 'execution', 'te04.mp4', '002_naive', 'detection.jsonl'
+        os.path.dirname(__file__), 'data', 'detection.jsonl'
     )
     
     # Load detection results
@@ -460,7 +452,7 @@ def test_trackers_comparison():
     img_size = (1080, 1920)
     
     # Initialize SORT trackers
-    from polyis.b3d.sort import KalmanBoxTracker as KalmanBoxTrackerB3D
+    from references.sort.sort import KalmanBoxTracker as KalmanBoxTrackerB3D
     KalmanBoxTrackerB3D.count = 0
     # reset_sort_count()
     
@@ -476,7 +468,7 @@ def test_trackers_comparison():
     )
     
     # Initialize OC-SORT trackers
-    from polyis.tracker.ocsort.ocsort import KalmanBoxTracker as KalmanBoxTrackerPython
+    from references.ocsort.ocsort import KalmanBoxTracker as KalmanBoxTrackerPython
     KalmanBoxTrackerPython.count = 0
     # reset_ocsort_count()
     
@@ -502,7 +494,7 @@ def test_trackers_comparison():
     )
     
     # Initialize ByteTrack trackers
-    from polyis.tracker.bytetrack.basetrack import BaseTrack
+    from references.bytetrack.basetrack import BaseTrack
     BaseTrack._count = 0
     # reset_tracker_count()
     

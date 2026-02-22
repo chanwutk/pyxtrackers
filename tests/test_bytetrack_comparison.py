@@ -16,10 +16,9 @@ import pytest
 import numpy as np
 import numpy.typing as npt
 
-from polyis.tracker.bytetrack.byte_tracker import BYTETracker as BYTETrackerPython
-from polyis.tracker.bytetrack.cython.bytetrack import BYTETracker as BYTETrackerCython  # type: ignore
-# from polyis.tracker.bytetrack.cython.bytetrack import reset_tracker_count
-from polyis.utilities import CACHE_DIR, get_config
+from references.bytetrack.byte_tracker import BYTETracker as BYTETrackerPython
+from pyxtrackers.bytetrack.bytetrack import BYTETracker as BYTETrackerCython  # type: ignore
+from references.bytetrack.basetrack import BaseTrack
 
 
 def load_detection_results(detection_path: str) -> list[dict]:
@@ -252,13 +251,9 @@ def test_bytetrack_comparison():
     4. Compares the results frame by frame
     """
 
-    # Load configuration to get tracker parameters
-    config = get_config()
-    cache_dir = config['DATA']['CACHE_DIR']
-
     # Path to detection results file
     detection_path = os.path.join(
-        cache_dir, 'jnc0', 'execution', 'te04.mp4', '002_naive', 'detection.jsonl'
+        os.path.dirname(__file__), 'data', 'detection.jsonl'
     )
 
     # Load detection results
@@ -282,7 +277,6 @@ def test_bytetrack_comparison():
     tracker_cython = BYTETrackerCython(args)
 
     # Reset tracker counters to ensure consistent IDs
-    from polyis.tracker.bytetrack.basetrack import BaseTrack
     BaseTrack._count = 0
     # reset_tracker_count()
 

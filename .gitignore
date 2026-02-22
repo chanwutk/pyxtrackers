@@ -1,2 +1,12 @@
 __pycache__/
+
+# Cython build artifacts (generated from .pyx)
+pyxtrackers/**/*.c
+pyxtrackers/**/*.cpp
+pyxtrackers/**/*.html
 *.so
+
+# Build directories
+build/
+dist/
+*.egg-info/

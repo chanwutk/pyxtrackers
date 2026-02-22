@@ -17,11 +17,9 @@ import pytest
 import numpy as np
 import numpy.typing as npt
 
-from polyis.b3d.sort import Sort as SortB3D
-# from polyis.tracker.sort import Sort as SortTracker
+from references.sort.sort import Sort as SortB3D
 
-from polyis.tracker.sort.cython.sort import Sort as SortCython  # type: ignore
-from polyis.utilities import CACHE_DIR, get_config
+from pyxtrackers.sort.sort import Sort as SortCython  # type: ignore
 
 
 def load_detection_results(detection_path: str) -> list[dict]:
@@ -257,13 +255,9 @@ def test_sort_comparison():
     4. Compares the results frame by frame
     """
     
-    # Load configuration to get tracker parameters
-    config = get_config()
-    cache_dir = config['DATA']['CACHE_DIR']
-    
     # Path to detection results file
     detection_path = os.path.join(
-        cache_dir, 'jnc0', 'execution', 'te04.mp4', '002_naive', 'detection.jsonl'
+        os.path.dirname(__file__), 'data', 'detection.jsonl'
     )
     
     # Load detection results
@@ -294,7 +288,7 @@ def test_sort_comparison():
     tracker_cython = SortCython(max_age=max_age, min_hits=min_hits, iou_threshold=iou_threshold)  # type: ignore[call-arg]
     
     # Reset tracker counters to ensure consistent IDs
-    from polyis.b3d.sort import KalmanBoxTracker as KalmanBoxTrackerB3D
+    from references.sort.sort import KalmanBoxTracker as KalmanBoxTrackerB3D
     # from polyis.tracker.sort import KalmanBoxTracker as KalmanBoxTrackerTracker
     # from polyis.tracker.sort.cython.sort import reset_tracker_count
     KalmanBoxTrackerB3D.count = 0

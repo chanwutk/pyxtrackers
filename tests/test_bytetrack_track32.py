@@ -7,22 +7,17 @@ import json
 import os
 import numpy as np
 
-from polyis.tracker.bytetrack.byte_tracker import BYTETracker as BYTETrackerPython
-from polyis.tracker.bytetrack.cython.bytetrack import BYTETracker as BYTETrackerCython
-# from polyis.tracker.bytetrack.cython.bytetrack import reset_tracker_count
-from polyis.utilities import get_config
+from references.bytetrack.byte_tracker import BYTETracker as BYTETrackerPython
+from pyxtrackers.bytetrack.bytetrack import BYTETracker as BYTETrackerCython
+from references.bytetrack.basetrack import BaseTrack
 
 
 def test_track_32():
     """Track what happens to track ID 32."""
 
-    # Load configuration
-    config = get_config()
-    cache_dir = config['DATA']['CACHE_DIR']
-
     # Path to detection results file
     detection_path = os.path.join(
-        cache_dir, 'jnc0', 'execution', 'te04.mp4', '002_naive', 'detection.jsonl'
+        os.path.dirname(__file__), 'data', 'detection.jsonl'
     )
 
     # Load frames 660-670
@@ -46,7 +41,6 @@ def test_track_32():
     args = Args()
 
     # Initialize Python tracker and run to frame 650
-    from polyis.tracker.bytetrack.basetrack import BaseTrack
     BaseTrack._count = 0
     tracker_python = BYTETrackerPython(args)
 

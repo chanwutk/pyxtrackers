@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "Cython>=3.0", "numpy>=2.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyxtrackers"
+version = "0.1.0"
+description = "High-performance Cython implementations of SOTA multi-object trackers"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "Cython>=3.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["pyxtrackers*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

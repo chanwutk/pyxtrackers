@@ -16,8 +16,8 @@ import pytest
 import numpy as np
 import numpy.typing as npt
 
-from polyis.tracker.ocsort.ocsort import OCSort as OCSortPython
-from polyis.tracker.ocsort.cython.ocsort import OCSort as OCSortCython  # type: ignore
+from references.ocsort.ocsort import OCSort as OCSortPython
+from pyxtrackers.ocsort.ocsort import OCSort as OCSortCython  # type: ignore
 
 
 def load_detection_results(detection_path: str) -> list[dict]:
@@ -296,7 +296,7 @@ def test_ocsort_comparison():
     )
     
     # Reset tracker counters to ensure consistent IDs
-    from polyis.tracker.ocsort.ocsort import KalmanBoxTracker as KalmanBoxTrackerPython
+    from references.ocsort.ocsort import KalmanBoxTracker as KalmanBoxTrackerPython
     KalmanBoxTrackerPython.count = 0
     # reset_tracker_count()
     

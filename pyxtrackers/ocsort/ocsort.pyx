@@ -332,22 +332,15 @@ cdef class OCSort:
     cdef double _inertia
     cdef int _use_byte
     cdef int _asso_func_type
-    # Scale fields for pre-computed image scaling
-    cdef double _img_h
-    cdef double _img_w
-    cdef double _scale
     cdef public int track_id_counter
 
     def __cinit__(self):
         self._frame_count = 0
-        self._scale = 1.0
-        self._img_h = 0.0
-        self._img_w = 0.0
         self.track_id_counter = 0
 
     def __init__(self, det_thresh, max_age=30, min_hits=3,
                  iou_threshold=0.3, delta_t=3, asso_func="iou", inertia=0.2,
-                 use_byte=False, img_info=None, img_size=None):
+                 use_byte=False):
         self._max_age = max_age
         self._min_hits = min_hits
         self._iou_threshold = iou_threshold
@@ -355,7 +348,6 @@ cdef class OCSort:
         self._delta_t = delta_t
         self._inertia = inertia
         self._use_byte = 1 if use_byte else 0
-        # Map asso_func string to enum
         if asso_func == "giou":
             self._asso_func_type = 1
         elif asso_func == "diou":
@@ -366,10 +358,6 @@ cdef class OCSort:
             self._asso_func_type = 4
         else:
             self._asso_func_type = 0  # iou
-        if img_info is not None and img_size is not None:
-            self._img_h = float(img_info[0])
-            self._img_w = float(img_info[1])
-            self._scale = min(img_size[0] / self._img_h, img_size[1] / self._img_w)
 
     def __dealloc__(self):
         cdef int i
@@ -752,28 +740,24 @@ cdef class OCSort:
 
         return n_output
 
-    def update(self, output_results):
+    def update(self, dets):
         """
-        Update tracker with new detections (Python-callable).
+        Update tracker with new detections.
 
         Args:
-            output_results: Detection results as Nx5 array [[x1,y1,x2,y2,score], ...]
-                            Nx4 arrays (no score) are also accepted (score defaults to 1.0)..
+            dets: Nx5 float64 array [[x1,y1,x2,y2,score], ...],
+                  or None/empty for no detections this frame.
+                  Bounding boxes must already be in image coordinates
+                  (use ``pyxtrackers.utils.scale`` beforehand if needed).
 
         Returns:
             Array of tracked objects [[x1,y1,x2,y2,track_id], ...]
         """
-        if isinstance(output_results, np.ndarray) and output_results.size == 0:
+        if dets is None or (isinstance(dets, np.ndarray) and dets.size == 0):
             return np.empty((0, 5))
 
-        # Post-process detections
-        if output_results.shape[1] == 4:
-            output_results = np.concatenate((output_results, np.ones((len(output_results), 1))), axis=1)
-
-        scores_np = output_results[:, 4]
-        bboxes_np = output_results[:, :4]
-
-        scores_np = np.asarray(scores_np, dtype=np.float64)
+        scores_np = np.asarray(dets[:, 4], dtype=np.float64)
+        bboxes_np = dets[:, :4]
 
         # Filter into high and low score
         remain_inds = scores_np > self._det_thresh

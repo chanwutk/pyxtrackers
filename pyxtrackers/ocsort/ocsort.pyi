@@ -18,6 +18,6 @@ class OCSort:
 
     def update(
         self,
-        output_results: npt.NDArray[np.floating] | None,
+        dets: npt.NDArray[np.floating] | None,
     ) -> npt.NDArray[np.floating]:
         ...

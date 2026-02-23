@@ -450,8 +450,13 @@ cdef class BYTETracker:
         self._frame_id = 0
         self.track_id_counter = 0
 
-    def __init__(self, track_thresh=0.5, match_thresh=0.8, track_buffer=30,
-                 mot20=False, frame_rate=30):
+    def __init__(self, args=None, frame_rate=30, track_thresh=0.5,
+                 match_thresh=0.8, track_buffer=30, mot20=False):
+        if args is not None:
+            track_thresh = getattr(args, 'track_thresh', track_thresh)
+            match_thresh = getattr(args, 'match_thresh', match_thresh)
+            track_buffer = getattr(args, 'track_buffer', track_buffer)
+            mot20 = getattr(args, 'mot20', mot20)
         self._track_thresh = track_thresh
         self._match_thresh = match_thresh
         self._det_thresh = track_thresh + 0.1
@@ -937,17 +942,22 @@ cdef class BYTETracker:
         tlbr_to_tlwh(tlbr_arr, tlwh_out)
         return np.array([tlwh_out[0], tlwh_out[1], tlwh_out[2], tlwh_out[3]])
 
-    def update(self, dets: np.ndarray[tuple[int, 5], np.number]):
+    def update(self, dets):
         """
-        Update tracker with new detections (Python-callable).
+        Update tracker with new detections.
 
         Args:
-            dets: Detection results as Nx5 array [[x1,y1,x2,y2,score], ...].
+            dets: Nx5 float64 array [[x1,y1,x2,y2,score], ...],
+                  or None/empty for no detections this frame.
+                  Bounding boxes must already be in image coordinates
+                  (use ``pyxtrackers.utils.scale`` beforehand if needed).
 
         Returns:
             Array of tracked objects [[x1,y1,x2,y2,track_id], ...]
         """
-        # Parse detections from numpy input
+        if dets is None or (isinstance(dets, np.ndarray) and dets.size == 0):
+            dets = np.empty((0, 5), dtype=np.float64)
+
         scores_np = dets[:, 4]
         bboxes_np = dets[:, :4]
 

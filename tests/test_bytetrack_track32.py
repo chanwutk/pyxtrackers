@@ -67,8 +67,7 @@ def test_track_32():
 
     # Run Cython tracker to frame 649
     tracker_cython = BYTETrackerCython(
-        track_thresh=0.5, match_thresh=0.8, track_buffer=30,
-        mot20=False, img_info=img_info, img_size=img_size,
+        track_thresh=0.5, match_thresh=0.8, track_buffer=30, mot20=False,
     )
 
     with open(detection_path, 'r') as f:

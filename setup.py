@@ -67,6 +67,14 @@ extensions = [
         extra_compile_args=ARGS + ["-std=c++11"],
         language="c++",
     ),
+    # Utils
+    Extension(
+        "pyxtrackers.utils.scale",
+        ["pyxtrackers/utils/scale.pyx"],
+        include_dirs=[numpy.get_include()],
+        define_macros=MACROS,
+        extra_compile_args=ARGS,
+    ),
     # ByteTrack
     Extension(
         "pyxtrackers.bytetrack.kalman_filter",

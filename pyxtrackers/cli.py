@@ -106,22 +106,16 @@ def _create_tracker(args: argparse.Namespace):
 
     if args.tracker == "bytetrack":
         from pyxtrackers.bytetrack.bytetrack import BYTETracker
-        img_info = tuple(args.img_info) if args.img_info else None
-        img_size = tuple(args.img_size) if args.img_size else None
         return BYTETracker(
             track_thresh=args.track_thresh,
             match_thresh=args.match_thresh,
             track_buffer=args.track_buffer,
             mot20=args.mot20,
             frame_rate=args.frame_rate,
-            img_info=img_info,
-            img_size=img_size,
         )
 
     if args.tracker == "ocsort":
         from pyxtrackers.ocsort.ocsort import OCSort
-        img_info = tuple(args.img_info) if args.img_info else None
-        img_size = tuple(args.img_size) if args.img_size else None
         return OCSort(
             det_thresh=args.det_thresh,
             max_age=args.max_age,
@@ -131,8 +125,6 @@ def _create_tracker(args: argparse.Namespace):
             asso_func=args.asso_func,
             inertia=args.inertia,
             use_byte=args.use_byte,
-            img_info=img_info,
-            img_size=img_size,
         )
 
     raise ValueError(f"Unknown tracker: {args.tracker}")
@@ -143,12 +135,21 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     tracker = _create_tracker(args)
 
+    img_info = None
+    img_size = None
+    if hasattr(args, 'img_info') and args.img_info and args.img_size:
+        from pyxtrackers.utils.scale import scale as scale_dets
+        img_info = tuple(args.img_info)
+        img_size = tuple(args.img_size)
+
     while True:
         line = sys.stdin.readline()
         if not line:
             break
 
         dets = parse_detections(line)
+        if img_info is not None:
+            dets = scale_dets(dets, img_info, img_size)
         tracks = tracker.update(dets)
         print(format_tracks(tracks), flush=True)
 

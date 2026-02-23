@@ -450,13 +450,14 @@ cdef class BYTETracker:
         self._frame_id = 0
         self.track_id_counter = 0
 
-    def __init__(self, args, frame_rate=30):
-        self._track_thresh = args.track_thresh
-        self._match_thresh = args.match_thresh
-        self._det_thresh = args.track_thresh + 0.1
-        self._buffer_size = int(frame_rate / 30.0 * args.track_buffer)
+    def __init__(self, track_thresh=0.5, match_thresh=0.8, track_buffer=30,
+                 mot20=False, frame_rate=30):
+        self._track_thresh = track_thresh
+        self._match_thresh = match_thresh
+        self._det_thresh = track_thresh + 0.1
+        self._buffer_size = int(frame_rate / 30.0 * track_buffer)
         self._max_time_lost = self._buffer_size
-        self._mot20 = 1 if args.mot20 else 0
+        self._mot20 = 1 if mot20 else 0
 
     def __dealloc__(self):
         # Collect all unique STrack pointers across all vectors to avoid double-free
@@ -936,32 +937,19 @@ cdef class BYTETracker:
         tlbr_to_tlwh(tlbr_arr, tlwh_out)
         return np.array([tlwh_out[0], tlwh_out[1], tlwh_out[2], tlwh_out[3]])
 
-    def update(self, output_results, img_info, img_size):
+    def update(self, dets: np.ndarray[tuple[int, 5], np.number]):
         """
         Update tracker with new detections (Python-callable).
 
         Args:
-            output_results: Detection results (Nx5 or Nx6 array)
-            img_info: Image info (height, width)
-            img_size: Image size for rescaling
+            dets: Detection results as Nx5 array [[x1,y1,x2,y2,score], ...].
 
         Returns:
             Array of tracked objects [[x1,y1,x2,y2,track_id], ...]
         """
         # Parse detections from numpy input
-        if output_results.shape[1] == 5:
-            scores_np = output_results[:, 4]
-            bboxes_np = output_results[:, :4]
-        else:
-            if hasattr(output_results, 'cpu'):
-                output_results = output_results.cpu().numpy()
-            scores_np = output_results[:, 4] * output_results[:, 5]
-            bboxes_np = output_results[:, :4]
-
-        # Apply scale to bounding boxes
-        img_h, img_w = img_info[0], img_info[1]
-        scale = min(img_size[0] / float(img_h), img_size[1] / float(img_w))
-        bboxes_np = bboxes_np / scale
+        scores_np = dets[:, 4]
+        bboxes_np = dets[:, :4]
 
         # Ensure contiguous float64 arrays
         cdef cnp.ndarray[cnp.float64_t, ndim=2] bboxes_c = np.ascontiguousarray(bboxes_np, dtype=np.float64)

@@ -48,7 +48,8 @@ def run_tracker(
     tracker,
     detection_results: list[dict],
     img_info: tuple[int, int] = (1080, 1920),
-    img_size: tuple[int, int] = (1080, 1920)
+    img_size: tuple[int, int] = (1080, 1920),
+    is_cython: bool = False,
 ) -> tuple[dict[int, npt.NDArray[np.floating]], dict[str, Any] | None]:
     """
     Run a tracker on detection results and collect tracking outputs.
@@ -58,6 +59,7 @@ def run_tracker(
         detection_results: List of frame detection results
         img_info: Image info tuple (height, width)
         img_size: Image size tuple (height, width)
+        is_cython: If True, use Cython interface (update(dets) only)
 
     Returns:
         tuple: (tracking_results, performance_metrics)
@@ -101,7 +103,10 @@ def run_tracker(
         performance_metrics['num_detections'].append(len(dets))
 
         # Update tracker and get tracked detections
-        tracked_objs = tracker.update(dets, img_info, img_size)
+        if is_cython:
+            tracked_objs = tracker.update(dets)
+        else:
+            tracked_objs = tracker.update(dets, img_info, img_size)
 
         # Convert tracked objects to numpy array
         # Check if we got objects or already a numpy array
@@ -263,7 +268,7 @@ def test_bytetrack_comparison():
     if not detection_results:
         pytest.skip(f"No detection results found in {detection_path}")
 
-    # Create a simple args object with default values
+    # Create a simple args object for Python reference tracker
     class Args:
         track_thresh = 0.5
         track_buffer = 30
@@ -272,34 +277,38 @@ def test_bytetrack_comparison():
 
     args = Args()
 
-    # Initialize both trackers with the same parameters
-    tracker_python = BYTETrackerPython(args)
-    tracker_cython = BYTETrackerCython(args)
-
-    # Reset tracker counters to ensure consistent IDs
-    BaseTrack._count = 0
-    # reset_tracker_count()
-
     # Image info and size (default values, can be adjusted based on actual data)
     img_info = (1080, 1920)
     img_size = (1080, 1920)
 
+    # Initialize both trackers with the same parameters
+    tracker_python = BYTETrackerPython(args)
+    tracker_cython = BYTETrackerCython(
+        track_thresh=0.5, match_thresh=0.8, track_buffer=30,
+        mot20=False,
+    )
+
+    # Reset tracker counters to ensure consistent IDs
+    BaseTrack._count = 0
+
     print("\n=== Running Python ByteTrack ===")
     results_python, perf_python = run_tracker(
-        tracker_python, detection_results, img_info, img_size
+        tracker_python, detection_results, img_info, img_size, is_cython=False,
     )
 
     # Reset counters again for fair comparison
     BaseTrack._count = 0
-    # reset_tracker_count()
 
     # Reinitialize trackers
     tracker_python = BYTETrackerPython(args)
-    tracker_cython = BYTETrackerCython(args)
+    tracker_cython = BYTETrackerCython(
+        track_thresh=0.5, match_thresh=0.8, track_buffer=30,
+        mot20=False,
+    )
 
     print("\n=== Running Cython ByteTrack ===")
     results_cython, perf_cython = run_tracker(
-        tracker_cython, detection_results, img_info, img_size
+        tracker_cython, detection_results, img_info, img_size, is_cython=True,
     )
 
     # Compare results

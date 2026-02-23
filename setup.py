@@ -13,6 +13,14 @@ LAPJV_DIR = os.path.join("vendor", "lapjv")
 
 
 extensions = [
+    # References (for testing only)
+    Extension(
+        "references.bytetrack.cython_bbox",
+        ["references/bytetrack/cython_bbox.pyx"],
+        include_dirs=[numpy.get_include()],
+        define_macros=MACROS,
+        extra_compile_args=ARGS,
+    ),
     # SORT
     Extension(
         "pyxtrackers.sort.kalman_filter",
@@ -89,51 +97,6 @@ extensions = [
 ]
 
 
-class CleanCommand(Command):
-    """Custom clean command to remove build artifacts."""
-
-    description = "Remove build artifacts (*.c, *.cpp, *.html, *.so files)"
-    user_options = []
-
-    c_patterns = [
-        "pyxtrackers/**/*.c",
-        "pyxtrackers/**/*.cpp",
-    ]
-    so_patterns = [
-        "pyxtrackers/**/*.so",
-    ]
-    html_patterns = [
-        "pyxtrackers/**/*.html",
-    ]
-
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        """Execute the clean command."""
-        removed_count = 0
-        for pattern in self.c_patterns + self.so_patterns + self.html_patterns:
-            for filepath in glob.glob(pattern, recursive=True):
-                try:
-                    os.remove(filepath)
-                    print(f"Removed: {filepath}")
-                    removed_count += 1
-                except OSError as e:
-                    print(f"Error removing {filepath}: {e}")
-
-        print(f"\nCleaned {removed_count} file(s)")
-
-
-class CleanAnnotateCommand(CleanCommand):
-    """Custom clean command to remove only annotation artifacts (*.c, *.cpp, *.html files)."""
-
-    description = "Remove annotation artifacts (*.c, *.cpp, *.html files only)"
-    so_patterns = []
-
-
 class BuildExt(build_ext):
     """Custom build_ext command that defaults to --inplace."""
 
@@ -185,10 +148,6 @@ ext_modules = cythonize(
 
 setup(
     ext_modules=ext_modules,
-    cmdclass={
-        "clean": CleanCommand,
-        "clean_annotate": CleanAnnotateCommand,
-        "build_ext": BuildExt,
-    },
+    cmdclass={ "build_ext": BuildExt },
     zip_safe=False,
 )

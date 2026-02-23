@@ -332,14 +332,22 @@ cdef class OCSort:
     cdef double _inertia
     cdef int _use_byte
     cdef int _asso_func_type
+    # Scale fields for pre-computed image scaling
+    cdef double _img_h
+    cdef double _img_w
+    cdef double _scale
     cdef public int track_id_counter
 
     def __cinit__(self):
         self._frame_count = 0
+        self._scale = 1.0
+        self._img_h = 0.0
+        self._img_w = 0.0
         self.track_id_counter = 0
 
     def __init__(self, det_thresh, max_age=30, min_hits=3,
-                 iou_threshold=0.3, delta_t=3, asso_func="iou", inertia=0.2, use_byte=False):
+                 iou_threshold=0.3, delta_t=3, asso_func="iou", inertia=0.2,
+                 use_byte=False, img_info=None, img_size=None):
         self._max_age = max_age
         self._min_hits = min_hits
         self._iou_threshold = iou_threshold
@@ -358,6 +366,10 @@ cdef class OCSort:
             self._asso_func_type = 4
         else:
             self._asso_func_type = 0  # iou
+        if img_info is not None and img_size is not None:
+            self._img_h = float(img_info[0])
+            self._img_w = float(img_info[1])
+            self._scale = min(img_size[0] / self._img_h, img_size[1] / self._img_w)
 
     def __dealloc__(self):
         cdef int i
@@ -740,27 +752,27 @@ cdef class OCSort:
 
         return n_output
 
-    def update(self, output_results, img_info, img_size):
-        """Update tracker with new detections (Python-callable)."""
-        if output_results is None:
+    def update(self, output_results):
+        """
+        Update tracker with new detections (Python-callable).
+
+        Args:
+            output_results: Detection results as Nx5 array [[x1,y1,x2,y2,score], ...]
+                            Nx4 arrays (no score) are also accepted (score defaults to 1.0)..
+
+        Returns:
+            Array of tracked objects [[x1,y1,x2,y2,track_id], ...]
+        """
+        if isinstance(output_results, np.ndarray) and output_results.size == 0:
             return np.empty((0, 5))
 
         # Post-process detections
         if output_results.shape[1] == 4:
             output_results = np.concatenate((output_results, np.ones((len(output_results), 1))), axis=1)
-        if output_results.shape[1] == 5:
-            scores_np = output_results[:, 4]
-            bboxes_np = output_results[:, :4]
-        else:
-            if hasattr(output_results, 'cpu'):
-                output_results = output_results.cpu().numpy()
-            scores_np = output_results[:, 4] * output_results[:, 5]
-            bboxes_np = output_results[:, :4]
 
-        # Scale bboxes
-        img_h, img_w = img_info[0], img_info[1]
-        scale = min(img_size[0] / float(img_h), img_size[1] / float(img_w))
-        bboxes_np = bboxes_np / scale
+        scores_np = output_results[:, 4]
+        bboxes_np = output_results[:, :4]
+
         scores_np = np.asarray(scores_np, dtype=np.float64)
 
         # Filter into high and low score

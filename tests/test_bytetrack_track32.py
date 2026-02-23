@@ -40,12 +40,12 @@ def test_track_32():
 
     args = Args()
 
+    img_info = (1080, 1920)
+    img_size = (1080, 1920)
+
     # Initialize Python tracker and run to frame 650
     BaseTrack._count = 0
     tracker_python = BYTETrackerPython(args)
-
-    img_info = (1080, 1920)
-    img_size = (1080, 1920)
 
     # Run Python tracker to frame 649 (to set up state)
     with open(detection_path, 'r') as f:
@@ -66,8 +66,10 @@ def test_track_32():
                 tracker_python.update(dets, img_info, img_size)
 
     # Run Cython tracker to frame 649
-    # reset_tracker_count()
-    tracker_cython = BYTETrackerCython(args)
+    tracker_cython = BYTETrackerCython(
+        track_thresh=0.5, match_thresh=0.8, track_buffer=30,
+        mot20=False, img_info=img_info, img_size=img_size,
+    )
 
     with open(detection_path, 'r') as f:
         for i, line in enumerate(f):
@@ -84,7 +86,7 @@ def test_track_32():
                     dets = dets[:, :5]
                 else:
                     dets = np.empty((0, 5), dtype=np.float64)
-                tracker_cython.update(dets, img_info, img_size)
+                tracker_cython.update(dets)
 
     # Now process frames 650-669 with detailed tracking
     for frame_result in detection_results:
@@ -106,7 +108,7 @@ def test_track_32():
 
         # Run both trackers
         python_result = tracker_python.update(dets, img_info, img_size)
-        cython_result = tracker_cython.update(dets, img_info, img_size)
+        cython_result = tracker_cython.update(dets)
 
         # Check track 32 status after update
         python_32_tracked = any(t.track_id == 32 for t in tracker_python.tracked_stracks)

@@ -12,15 +12,12 @@ class OCSort:
         delta_t: int = 3,
         asso_func: str = "iou",
         inertia: float = 0.2,
-        use_byte: bool = False
+        use_byte: bool = False,
     ):
         ...
 
     def update(
         self,
         output_results: npt.NDArray[np.floating] | None,
-        img_info: tuple[int, int],
-        img_size: tuple[int, int]
     ) -> npt.NDArray[np.floating]:
         ...
-

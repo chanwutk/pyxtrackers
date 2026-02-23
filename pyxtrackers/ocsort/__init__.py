@@ -1,3 +1,3 @@
-from pyxtrackers.ocsort.ocsort_wrapper import OCSort
+from pyxtrackers.ocsort.ocsort import OCSort
 
 __all__ = ["OCSort"]

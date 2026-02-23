@@ -57,24 +57,23 @@ detections = np.array([
 tracked = tracker.update(detections)
 
 # --- ByteTrack ---
-class Args:
-    track_thresh = 0.5
-    track_buffer = 30
-    match_thresh = 0.8
-    mot20 = False
-
-tracker = BYTETracker(Args())
-img_info = (1080, 1920)  # (height, width)
-img_size = (1080, 1920)
-
-online_targets = tracker.update(detections, img_info, img_size)
-# Each target has: .tlwh, .track_id, .score
-
-# --- OC-SORT ---
-tracker = OCSort(img_size=(1080, 1920), det_thresh=0.3)
-
+tracker = BYTETracker(track_thresh=0.5, match_thresh=0.8, track_buffer=30)
 tracked = tracker.update(detections)
 # Returns: [[x1, y1, x2, y2, track_id], ...]
+
+# --- OC-SORT ---
+tracker = OCSort(det_thresh=0.3)
+tracked = tracker.update(detections)
+# Returns: [[x1, y1, x2, y2, track_id], ...]
+```
+
+All three trackers share the same interface: configuration in the constructor, only detections in `update()`.
+
+If the input detections were produced at a different resolution than the original image, pass `img_info` and `img_size` to the constructor to enable automatic rescaling:
+
+```python
+tracker = BYTETracker(track_thresh=0.5, img_info=(1080, 1920), img_size=(608, 1088))
+tracker = OCSort(det_thresh=0.3, img_info=(1080, 1920), img_size=(608, 1088))
 ```
 
 ## How It Works
@@ -96,6 +95,7 @@ pyxtrackers/           # Installable Cython package
   sort/                # SORT tracker (7D Kalman, constant velocity)
   bytetrack/           # ByteTrack tracker (8D Kalman, two-stage association)
   ocsort/              # OC-SORT tracker (7D Kalman, freeze/unfreeze)
+  cli.py               # stdin/stdout CLI for cross-language interop
 references/            # Pure Python reference implementations (for testing)
 tests/                 # Comparison tests verifying numerical equivalence
 vendor/lapjv/          # Vendored C++ linear assignment solver
@@ -124,6 +124,94 @@ Tests run both the Cython and Python reference implementations on identical dete
 
 ```bash
 uv run pytest
+```
+
+## Interoperability (CLI)
+
+PyXTrackers includes a stdin/stdout CLI that lets any language invoke tracking via pipes. After installation, the `pyxtrackers` command is available.
+
+### Usage
+
+```bash
+pyxtrackers <tracker> [options]
+```
+
+The process reads one line per frame from stdin, runs the tracker, and writes one line per frame to stdout. Empty input lines (no detections) still advance the tracker state and produce an empty output line, preserving 1:1 line correspondence.
+
+### Input format
+
+Detections are space-separated, each with 5 comma-separated values:
+
+```
+x1,y1,x2,y2,score x1,y1,x2,y2,score ...
+```
+
+### Output format
+
+Tracked objects are space-separated, each with 5 comma-separated values:
+
+```
+id,x1,y1,x2,y2 id,x1,y1,x2,y2 ...
+```
+
+### Examples
+
+Pipe detections from a file:
+
+```bash
+cat detections.txt | pyxtrackers sort --min-hits 1 > tracks.txt
+```
+
+Inline:
+
+```bash
+echo "100,200,300,400,0.9 150,250,350,450,0.8" | pyxtrackers sort --min-hits 1
+```
+
+With ByteTrack and image scaling:
+
+```bash
+cat detections.txt | pyxtrackers bytetrack --track-thresh 0.5 --img-info 1080 1920 --img-size 608 1088
+```
+
+### Cross-language integration
+
+Any language that can spawn a subprocess and read/write its stdin/stdout can use pyxtrackers. For example, in Node.js:
+
+```javascript
+const { spawn } = require('child_process');
+const tracker = spawn('pyxtrackers', ['sort', '--min-hits', '1']);
+
+tracker.stdout.on('data', (data) => {
+  // Each line: "id,x1,y1,x2,y2 id,x1,y1,x2,y2 ..."
+  console.log('Tracks:', data.toString().trim());
+});
+
+// Send detections (one frame per line)
+tracker.stdin.write('100,200,300,400,0.9 150,250,350,450,0.8\n');
+tracker.stdin.write('105,205,305,405,0.9\n');
+tracker.stdin.end();
+```
+
+Or in Rust (pseudocode):
+
+```rust
+use std::process::{Command, Stdio};
+use std::io::{Write, BufRead, BufReader};
+
+let mut child = Command::new("pyxtrackers")
+    .args(&["ocsort", "--det-thresh", "0.3"])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .spawn()?;
+
+let stdin = child.stdin.as_mut().unwrap();
+writeln!(stdin, "100,200,300,400,0.9")?;
+
+let reader = BufReader::new(child.stdout.take().unwrap());
+for line in reader.lines() {
+    println!("Tracks: {}", line?);
+}
 ```
 
 ## Roadmap

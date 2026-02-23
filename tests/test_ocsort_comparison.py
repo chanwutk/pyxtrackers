@@ -44,20 +44,22 @@ def load_detection_results(detection_path: str) -> list[dict]:
 
 
 def run_tracker(
-    tracker, 
+    tracker,
     detection_results: list[dict],
     img_info: tuple[int, int] = (1080, 1920),
-    img_size: tuple[int, int] = (1080, 1920)
+    img_size: tuple[int, int] = (1080, 1920),
+    is_cython: bool = False,
 ) -> tuple[dict[int, npt.NDArray[np.floating]], dict[str, Any] | None]:
     """
     Run a tracker on detection results and collect tracking outputs.
-    
+
     Args:
         tracker: Tracker instance (OCSortPython or OCSortCython)
         detection_results: List of frame detection results
         img_info: Image info tuple (height, width)
         img_size: Image size tuple (height, width)
-        
+        is_cython: If True, use Cython interface (update(dets) only)
+
     Returns:
         tuple: (tracking_results, performance_metrics)
                - tracking_results: Dictionary mapping frame_idx to tracking results
@@ -71,15 +73,15 @@ def run_tracker(
         'num_frames': 0,
         'num_detections': [],
     }
-    
+
     # Measure total execution time
     start_total = time.perf_counter()
-    
+
     for frame_result in detection_results:
         frame_idx = frame_result['frame_idx']
         # Handle both 'detections' and 'bboxes' keys (different files use different keys)
         detections = frame_result.get('detections', frame_result.get('bboxes', []))
-        
+
         # Convert detections to numpy array format [x1, y1, x2, y2, score]
         if len(detections) > 0:
             dets = np.array(detections, dtype=np.float64)
@@ -94,13 +96,16 @@ def run_tracker(
                 dets = np.empty((0, 5), dtype=np.float64)
         else:
             dets = np.empty((0, 5), dtype=np.float64)
-        
+
         # Measure frame processing time
         start_frame = time.perf_counter()
         performance_metrics['num_detections'].append(len(dets))
-        
+
         # Update tracker and get tracked detections
-        tracked_dets = tracker.update(dets, img_info, img_size)
+        if is_cython:
+            tracked_dets = tracker.update(dets)
+        else:
+            tracked_dets = tracker.update(dets, img_info, img_size)
         
         # Record frame timing
         frame_time = time.perf_counter() - start_frame
@@ -273,6 +278,10 @@ def test_ocsort_comparison():
         inertia = 0.2
         use_byte = False
     
+    # Image info and size (default values, can be adjusted based on actual data)
+    img_info = (1080, 1920)
+    img_size = (1080, 1920)
+
     # Initialize both trackers with the same parameters
     tracker_python = OCSortPython(
         det_thresh=det_thresh,
@@ -292,27 +301,23 @@ def test_ocsort_comparison():
         delta_t=delta_t,
         asso_func=asso_func,
         inertia=inertia,
-        use_byte=use_byte
+        use_byte=use_byte,
+        img_info=img_info,
+        img_size=img_size,
     )
-    
+
     # Reset tracker counters to ensure consistent IDs
     from references.ocsort.ocsort import KalmanBoxTracker as KalmanBoxTrackerPython
     KalmanBoxTrackerPython.count = 0
-    # reset_tracker_count()
-    
-    # Image info and size (default values, can be adjusted based on actual data)
-    img_info = (1080, 1920)
-    img_size = (1080, 1920)
-    
+
     print("\n=== Running Python OC-SORT ===")
     results_python, perf_python = run_tracker(
-        tracker_python, detection_results, img_info, img_size
+        tracker_python, detection_results, img_info, img_size, is_cython=False,
     )
-    
+
     # Reset counters again for fair comparison
     KalmanBoxTrackerPython.count = 0
-    # reset_tracker_count()
-    
+
     # Reinitialize trackers
     tracker_python = OCSortPython(
         det_thresh=det_thresh,
@@ -332,12 +337,14 @@ def test_ocsort_comparison():
         delta_t=delta_t,
         asso_func=asso_func,
         inertia=inertia,
-        use_byte=use_byte
+        use_byte=use_byte,
+        img_info=img_info,
+        img_size=img_size,
     )
-    
+
     print("\n=== Running Cython OC-SORT ===")
     results_cython, perf_cython = run_tracker(
-        tracker_cython, detection_results, img_info, img_size
+        tracker_cython, detection_results, img_info, img_size, is_cython=True,
     )
     
     # Compare results

@@ -36,7 +36,7 @@ dev = [
 include = ["pyxtrackers*"]
 
 [tool.setuptools-scm]
-version_scheme = "guess-next-dev"
+version_scheme = "calver-by-date"
 local_scheme = "node-and-date"
 
 [tool.pytest.ini_options]
@@ -49,12 +49,4 @@ default-groups = ["dev"]
 build = "cp310-* cp311-* cp312-* cp313-*"
 skip = "*-musllinux_*"
 test-command = "python -c \"from pyxtrackers import Sort, BYTETracker, OCSort; print('OK')\""
-
-[tool.cibuildwheel.linux]
-archs = "x86_64 aarch64"
-
-[tool.cibuildwheel.macos]
-archs = "x86_64 arm64"
-
-[tool.cibuildwheel.windows]
-archs = "AMD64"
+# Each CI runner builds its native arch only (CIBW_ARCHS=auto in workflow)

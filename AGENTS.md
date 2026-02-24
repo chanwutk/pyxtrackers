@@ -77,30 +77,33 @@ uv is the recommended project manager. It handles environment creation, dependen
 
 ```bash
 uv sync                                  # Creates .venv, installs deps + editable project
-uv run pip install -e .                  # Editable install (compiles Cython extensions)
+uv run python setup.py build_ext --inplace  # Compile Cython extensions (.pyx → .so)
 ```
 
 ### Common Commands
 
 ```bash
 uv run pytest tests/ -v                  # Run tests
-uv run pip install -e .                  # Rebuild extensions after .pyx changes
+uv run python setup.py build_ext --inplace  # Rebuild extensions after .pyx changes
 ```
 
 ### Versioning
 
-Version is managed by `setuptools-scm` and derived from git tags automatically.
+Version is managed by `setuptools-scm` with CalVer (`YYYY.M.D`) derived from git tags automatically.
 
 ```bash
-git tag v0.2.0                           # Tag a release
-git push origin v0.2.0                   # Push tag → triggers CI release pipeline
+git tag v2026.2.23                       # Tag a release (first of the day)
+git tag v2026.2.23.1                     # Second release same day
+git push origin v2026.2.23              # Push tag → triggers CI release pipeline
 ```
 
-Untagged commits get dev versions like `0.2.1.dev3+gabc1234`. The version is available at runtime via `pyxtrackers.__version__`.
+Untagged commits get dev versions like `2026.2.24.0.dev3`. The version is available at runtime via `pyxtrackers.__version__`.
+
+Note: PEP 440 normalizes leading zeros, so the version is `2026.2.23` not `2026.02.23`.
 
 ### Releasing
 
-1. Tag the commit: `git tag v0.2.0 && git push origin v0.2.0`
+1. Tag the commit: `git tag v2026.2.23 && git push origin v2026.2.23`
 2. GitHub Actions builds sdist + wheels for all platforms and publishes to PyPI
 3. GitHub Release is created with wheels + standalone CLI binaries attached
 4. For conda-forge: submit `conda-recipe/meta.yaml` to `conda-forge/staged-recipes` (first release only; subsequent releases are auto-detected)

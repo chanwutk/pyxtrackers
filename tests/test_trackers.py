@@ -1,8 +1,9 @@
 """
 Compare Python reference trackers against Cython implementations.
 
-Loads detections from a shared JSONL file and verifies that each Cython
-tracker produces numerically identical results to its Python reference.
+Loads detections from a shared JSONL file, optionally tiles them to increase
+data size (scalability testing), and verifies that each Cython tracker
+produces numerically identical results to its Python reference.
 """
 
 import json
@@ -17,6 +18,11 @@ import pytest
 
 DETECTION_PATH = os.path.join(os.path.dirname(__file__), "data", "detection.jsonl")
 TOLERANCE = 1e-6
+IMG_H, IMG_W = 1080, 1920
+SCALES = [1]
+LENGTHS = [1]
+
+_PERF_RECORDS: list[dict] = []
 
 
 # ============================================================
@@ -24,15 +30,13 @@ TOLERANCE = 1e-6
 # ============================================================
 
 def load_detection_results(path: str) -> list[dict]:
-    if not os.path.exists(path):
-        pytest.skip(f"Detection file not found: {path}")
+    assert os.path.exists(path), f"Detection file not found: {path}"
     results = []
     with open(path, "r") as f:
         for line in f:
             if line.strip():
                 results.append(json.loads(line))
-    if not results:
-        pytest.skip(f"No detection results found in {path}")
+    assert results, f"No detection results found in {path}"
     return results
 
 
@@ -48,6 +52,78 @@ def _parse_frame_detections(frame_result: dict) -> np.ndarray:
         scores = np.ones((dets.shape[0], 1), dtype=np.float64)
         dets = np.concatenate([dets, scores], axis=1)
     return dets[:, :5]
+
+
+def stack_detections(
+    detection_results: list[dict],
+    scale: int,
+    img_h: float = IMG_H,
+    img_w: float = IMG_W,
+) -> list[dict]:
+    """Tile each frame's detections to create *scale*x the data.
+
+    Layout (scale -> rows x cols):
+      1x -> 1x1, 2x -> 2x1, 4x -> 2x2, 6x -> 2x3, 8x -> 2x4, 10x -> 2x5
+
+    Each tile beyond (0, 0) offsets bboxes by ``(row * img_h, col * img_w)``.
+    """
+    if scale == 1:
+        return detection_results
+
+    rows = 2
+    cols = scale // 2
+
+    stacked: list[dict] = []
+    for frame in detection_results:
+        dets = _parse_frame_detections(frame)
+        if dets.shape[0] == 0:
+            stacked.append(frame)
+            continue
+
+        tiles = [dets]
+        for r in range(rows):
+            for c in range(cols):
+                if r == 0 and c == 0:
+                    continue
+                tile = dets.copy()
+                tile[:, 0] += c * img_w  # x1
+                tile[:, 2] += c * img_w  # x2
+                tile[:, 1] += r * img_h  # y1
+                tile[:, 3] += r * img_h  # y2
+                tiles.append(tile)
+
+        merged = np.concatenate(tiles, axis=0)
+        stacked.append({
+            "frame_idx": frame["frame_idx"],
+            "detections": merged.tolist(),
+        })
+
+    return stacked
+
+
+def repeat_detections(detection_results: list[dict], length: int) -> list[dict]:
+    """Repeat the detection sequence *length* times to simulate a longer video.
+
+    Frame indices are offset so each repetition has unique indices.
+    """
+    if length == 1:
+        return detection_results
+
+    n_frames = len(detection_results)
+    repeated: list[dict] = []
+    for rep in range(length):
+        for frame in detection_results:
+            repeated.append({
+                "frame_idx": frame["frame_idx"] + rep * n_frames,
+                "detections": frame.get("detections", frame.get("bboxes", [])),
+            })
+    return repeated
+
+
+def _avg_dets_per_frame(detection_results: list[dict]) -> float:
+    """Compute average number of detections per frame."""
+    total = sum(len(_parse_frame_detections(f)) for f in detection_results)
+    return total / len(detection_results) if detection_results else 0.0
 
 
 UpdateFn = Callable[[Any, np.ndarray], np.ndarray]
@@ -86,15 +162,11 @@ def run_tracker(
     return tracking_results, perf
 
 
-def _compare_frames(
-    result_a: np.ndarray, result_b: np.ndarray, tolerance: float
-) -> bool:
-    if len(result_a) != len(result_b):
+def _compare_frames(a: np.ndarray, b: np.ndarray, tolerance: float) -> bool:
+    if len(a) != len(b):
         return False
-    if len(result_a) == 0:
+    if len(a) == 0:
         return True
-    a = result_a[result_a[:, 4].argsort()]
-    b = result_b[result_b[:, 4].argsort()]
     if not np.array_equal(a[:, 4], b[:, 4]):
         return False
     return bool(np.allclose(a[:, :4], b[:, :4], atol=tolerance))
@@ -140,8 +212,13 @@ def assert_results_match(
 # Test functions
 # ============================================================
 
-def test_sort_comparison():
+@pytest.mark.parametrize("length", LENGTHS, ids=[f"len{l}" for l in LENGTHS])
+@pytest.mark.parametrize("scale", SCALES, ids=[f"s{s}" for s in SCALES])
+def test_sort_comparison(scale: int, length: int):
     detection_results = load_detection_results(DETECTION_PATH)
+    detection_results = stack_detections(detection_results, scale)
+    detection_results = repeat_detections(detection_results, length)
+    avg_dets = _avg_dets_per_frame(detection_results)
 
     from references.sort.sort import Sort as SortPython, KalmanBoxTracker
     from pyxtrackers.sort.sort import Sort as SortCython
@@ -161,16 +238,28 @@ def test_sort_comparison():
         detection_results, update,
     )
 
-    assert_results_match(results_py, results_cy, "SORT", perf_py, perf_cy)
+    assert_results_match(results_py, results_cy, f"SORT s{scale}-len{length}", perf_py, perf_cy)
+    _PERF_RECORDS.append({
+        "tracker": "SORT", "scale": scale, "length": length,
+        "avg_dets": avg_dets, "fps_py": perf_py["fps"], "fps_cy": perf_cy["fps"],
+        "speedup": perf_py["total_time"] / perf_cy["total_time"] if perf_cy["total_time"] > 0 else 0,
+    })
 
 
-def test_ocsort_comparison():
+@pytest.mark.parametrize("length", LENGTHS, ids=[f"len{l}" for l in LENGTHS])
+@pytest.mark.parametrize("scale", SCALES, ids=[f"s{s}" for s in SCALES])
+def test_ocsort_comparison(scale: int, length: int):
     detection_results = load_detection_results(DETECTION_PATH)
+    detection_results = stack_detections(detection_results, scale)
+    detection_results = repeat_detections(detection_results, length)
+    avg_dets = _avg_dets_per_frame(detection_results)
 
     from references.ocsort.ocsort import OCSort as OCSortPython, KalmanBoxTracker
     from pyxtrackers.ocsort.ocsort import OCSort as OCSortCython
 
-    img_info, img_size = (1080, 1920), (1080, 1920)
+    img_h = IMG_H * (2 if scale > 1 else 1)
+    img_w = IMG_W * max(scale // 2, 1)
+    img_info, img_size = (img_h, img_w), (img_h, img_w)
 
     def update_python(tracker, dets):
         return tracker.update(dets, img_info, img_size)
@@ -190,17 +279,29 @@ def test_ocsort_comparison():
         detection_results, update_cython,
     )
 
-    assert_results_match(results_py, results_cy, "OC-SORT", perf_py, perf_cy)
+    assert_results_match(results_py, results_cy, f"OC-SORT s{scale}-len{length}", perf_py, perf_cy)
+    _PERF_RECORDS.append({
+        "tracker": "OC-SORT", "scale": scale, "length": length,
+        "avg_dets": avg_dets, "fps_py": perf_py["fps"], "fps_cy": perf_cy["fps"],
+        "speedup": perf_py["total_time"] / perf_cy["total_time"] if perf_cy["total_time"] > 0 else 0,
+    })
 
 
-def test_bytetrack_comparison():
+@pytest.mark.parametrize("length", LENGTHS, ids=[f"len{l}" for l in LENGTHS])
+@pytest.mark.parametrize("scale", SCALES, ids=[f"s{s}" for s in SCALES])
+def test_bytetrack_comparison(scale: int, length: int):
     detection_results = load_detection_results(DETECTION_PATH)
+    detection_results = stack_detections(detection_results, scale)
+    detection_results = repeat_detections(detection_results, length)
+    avg_dets = _avg_dets_per_frame(detection_results)
 
     from references.bytetrack.byte_tracker import BYTETracker as BYTETrackerPython
     from references.bytetrack.basetrack import BaseTrack
     from pyxtrackers.bytetrack.bytetrack import BYTETracker as BYTETrackerCython
 
-    img_info, img_size = (1080, 1920), (1080, 1920)
+    img_h = IMG_H * (2 if scale > 1 else 1)
+    img_w = IMG_W * max(scale // 2, 1)
+    img_info, img_size = (img_h, img_w), (img_h, img_w)
 
     def update_python(tracker, dets):
         tracked_objs = tracker.update(dets, img_info, img_size)
@@ -233,4 +334,9 @@ def test_bytetrack_comparison():
         detection_results, update_cython,
     )
 
-    assert_results_match(results_py, results_cy, "ByteTrack", perf_py, perf_cy)
+    assert_results_match(results_py, results_cy, f"ByteTrack s{scale}-len{length}", perf_py, perf_cy)
+    _PERF_RECORDS.append({
+        "tracker": "ByteTrack", "scale": scale, "length": length,
+        "avg_dets": avg_dets, "fps_py": perf_py["fps"], "fps_cy": perf_cy["fps"],
+        "speedup": perf_py["total_time"] / perf_cy["total_time"] if perf_cy["total_time"] > 0 else 0,
+    })

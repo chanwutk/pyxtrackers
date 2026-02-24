@@ -128,7 +128,7 @@ uv run pytest
 
 ## Interoperability (CLI)
 
-PyXTrackers includes a stdin/stdout CLI that lets any language invoke tracking via pipes. After installation, the `pyxtrackers` command is available.
+PyxTrackers includes a stdin/stdout CLI that lets any language invoke tracking via pipes. After installation, the `pyxtrackers` command is available.
 
 ### Usage
 
@@ -216,12 +216,8 @@ for line in reader.lines() {
 
 ## Roadmap
 
-- [ ] Clean up the tracker interface.
-- [ ] Add scalability tests (runtime when scaling the number of detections/frames, runtime per frame for different number of detections).
-- [ ] Complete migration to uv for project management.
 - [ ] Add GitHub Actions CI to test across environments (pyenv, uv, conda, poetry).
 - [ ] Make this package available in PyPI and possibly conda. Consideration: we should pre-build the binary; based on whether the users have their own C compiler, we may distribute the prebuit version.
-- [ ] Add CLI support.
 
 ## License
 

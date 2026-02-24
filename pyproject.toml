@@ -26,6 +26,8 @@ dev = [
     "torch>=2.10.0",
     "opencv-python-headless>=4.13.0.92",
     "pyinstaller>=6.19.0",
+    "altair>=5.0",
+    "vl-convert-python>=1.0",
 ]
 
 [tool.setuptools.packages.find]

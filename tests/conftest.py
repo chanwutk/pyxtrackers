@@ -60,16 +60,15 @@ def pytest_sessionfinish(session, exitstatus):
         .mark_line(point=True)
         .encode(
             x=alt.X("avg_dets:Q", title="Avg detections per frame"),
-            color=alt.Color("tracker:N"),
+            color=alt.Color("tracker:N", legend=alt.Legend(orient="bottom", title="Tracker")),
             strokeDash=alt.StrokeDash(
                 "impl:N",
                 scale=alt.Scale(domain=["Python", "Cython"], range=[[4, 4], [0, 0]]),
-                legend=alt.Legend(orient="bottom"),
             ),
             opacity=alt.Opacity(
                 "impl:N",
                 scale=alt.Scale(domain=["Python", "Cython"], range=[0.4, 1.0]),
-                legend=alt.Legend(orient="bottom"),
+                legend=alt.Legend(orient="bottom", title="Implementation"),
             ),
             tooltip=["tracker:N", "impl:N", "avg_dets:Q", "fps:Q"],
         )
@@ -77,14 +76,14 @@ def pytest_sessionfinish(session, exitstatus):
 
     throughput_left = base_throughput.encode(
         y=alt.Y("fps:Q", title="Throughput (fps)")
-    ).properties(title="Linear scale", width=400, height=400)
+    ).properties(title="Linear throughput scale", width=400, height=400)
 
     throughput_right = base_throughput.encode(
         y=alt.Y("fps:Q", title="Throughput (fps)", scale=alt.Scale(type="log"))
-    ).properties(title="Log scale", width=400, height=400)
+    ).properties(title="Log throughput scale", width=400, height=400)
 
     chart1 = (throughput_left | throughput_right).properties(
-        title="Tracker Throughput: Python vs Cython"
+        title="Tracker throughput: Python (Original) vs Cython (Ours)"
     )
 
     throughput_path = os.path.join(assets_dir, "throughput.png")
@@ -113,19 +112,10 @@ def pytest_sessionfinish(session, exitstatus):
         .encode(y="y:Q")
     )
 
-    speedup_left = (
+    chart2 = (
         base_speedup.encode(y=alt.Y("speedup:Q", title="Speedup (Python time / Cython time)"))
-        .properties(title="Linear scale", width=400, height=400)
+        .properties(title="Cython Speedup over Python (Ours / Original)", width=860, height=400)
     ) + reference_line
-
-    speedup_right = (
-        base_speedup.encode(
-            y=alt.Y("speedup:Q", title="Speedup (Python time / Cython time)", scale=alt.Scale(type="log"))
-        )
-        .properties(title="Log scale", width=400, height=400)
-    ) + reference_line
-
-    chart2 = (speedup_left | speedup_right).properties(title="Cython Speedup over Python")
 
     speedup_path = os.path.join(assets_dir, "speedup.png")
     chart2.save(speedup_path, scale_factor=2)

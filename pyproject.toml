@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0", "Cython>=3.0", "numpy>=2.0"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "Cython>=3.0", "numpy>=2.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyxtrackers"
-version = "0.1.0"
+dynamic = ["version"]
 description = "High-performance Cython implementations of SOTA multi-object trackers"
 readme = "README.md"
 license-files = ["LICENSE", "vendor/*/LICENSE"]
@@ -23,18 +23,38 @@ dev = [
     "filterpy>=1.4",
     "lap>=0.5",
     "setuptools>=82.0.0",
+    "setuptools-scm>=8",
     "torch>=2.10.0",
     "opencv-python-headless>=4.13.0.92",
     "pyinstaller>=6.19.0",
     "altair>=5.0",
     "vl-convert-python>=1.0",
+    "build>=1.0",
 ]
 
 [tool.setuptools.packages.find]
 include = ["pyxtrackers*"]
+
+[tool.setuptools-scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.uv]
 default-groups = ["dev"]
+
+[tool.cibuildwheel]
+build = "cp310-* cp311-* cp312-* cp313-*"
+skip = "*-musllinux_*"
+test-command = "python -c \"from pyxtrackers import Sort, BYTETracker, OCSort; print('OK')\""
+
+[tool.cibuildwheel.linux]
+archs = "x86_64 aarch64"
+
+[tool.cibuildwheel.macos]
+archs = "x86_64 arm64"
+
+[tool.cibuildwheel.windows]
+archs = "AMD64"

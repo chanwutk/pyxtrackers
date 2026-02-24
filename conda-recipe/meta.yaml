@@ -1,0 +1,49 @@
+{% set name = "pyxtrackers" %}
+{% set version = environ.get("GIT_DESCRIBE_TAG", "0.1.0").lstrip("v") %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.org/packages/source/p/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  # sha256: <FILL_AFTER_FIRST_PYPI_RELEASE>
+
+build:
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+  host:
+    - python >=3.10
+    - pip
+    - setuptools >=68.0
+    - setuptools-scm >=8
+    - cython >=3.0
+    - numpy >=2.0
+  run:
+    - python >=3.10
+    - numpy >=2.0
+
+test:
+  imports:
+    - pyxtrackers
+    - pyxtrackers.sort
+    - pyxtrackers.bytetrack
+    - pyxtrackers.ocsort
+
+about:
+  home: https://github.com/chanwutk/pyxtrackers
+  license: MIT
+  license_file:
+    - LICENSE
+    - vendor/lapjv/LICENSE
+  summary: High-performance Cython implementations of SOTA multi-object trackers
+  dev_url: https://github.com/chanwutk/pyxtrackers
+
+extra:
+  recipe-maintainers:
+    - chanwutk

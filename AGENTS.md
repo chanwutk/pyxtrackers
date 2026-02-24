@@ -54,7 +54,7 @@ FOR EACH STAGE OF REVIEW: output the explanation and pros and cons of each stage
 
 ## Project Overview
 
-PyXTrackers is a high-performance Cython reimplementation of three multi-object tracking algorithms: **SORT**, **ByteTrack**, and **OC-SORT**.
+PyxTrackers is a high-performance Cython reimplementation of three multi-object tracking algorithms: **SORT**, **ByteTrack**, and **OC-SORT**.
 The goal is numerical equivalence with the Python originals while achieving significant speedups.
 It is a standalone pip-installable package under the `pyxtrackers` namespace.
 
@@ -73,23 +73,44 @@ from pyxtrackers.ocsort import OCSort
 
 uv is the recommended project manager. It handles environment creation, dependency resolution, and lockfile management. The build backend is setuptools (uv delegates all compilation to it).
 
-**Important:** `uv sync` installs the project in editable mode but does **not** compile Cython extensions. You must run `build_ext` separately after every sync.
-
 ### First-Time Setup
 
 ```bash
 uv sync                                  # Creates .venv, installs deps + editable project
-uv run python setup.py build_ext         # Compile Cython extensions (.pyx → .so)
+uv run pip install -e .                  # Editable install (compiles Cython extensions)
 ```
 
 ### Common Commands
 
 ```bash
 uv run pytest tests/ -v                  # Run tests
-uv run python setup.py build_ext         # Rebuild extensions after .pyx changes
-uv run python setup.py clean             # Remove .c/.cpp/.html/.so build artifacts
-uv run python setup.py clean_annotate    # Remove only .c/.cpp/.html (keep .so)
+uv run pip install -e .                  # Rebuild extensions after .pyx changes
 ```
+
+### Versioning
+
+Version is managed by `setuptools-scm` and derived from git tags automatically.
+
+```bash
+git tag v0.2.0                           # Tag a release
+git push origin v0.2.0                   # Push tag → triggers CI release pipeline
+```
+
+Untagged commits get dev versions like `0.2.1.dev3+gabc1234`. The version is available at runtime via `pyxtrackers.__version__`.
+
+### Releasing
+
+1. Tag the commit: `git tag v0.2.0 && git push origin v0.2.0`
+2. GitHub Actions builds sdist + wheels for all platforms and publishes to PyPI
+3. GitHub Release is created with wheels + standalone CLI binaries attached
+4. For conda-forge: submit `conda-recipe/meta.yaml` to `conda-forge/staged-recipes` (first release only; subsequent releases are auto-detected)
+
+### Build Flags
+
+`setup.py` auto-detects the platform and build context:
+- **Source install** (`pip install .`): Uses `-march=native` for max performance on the user's CPU
+- **Binary wheels** (cibuildwheel/conda-build): Uses portable flags only (no `-march=native`)
+- **Windows** (MSVC): Uses `/O2 /fp:fast` instead of GCC/Clang flags
 
 ### Managing Dependencies
 

@@ -1,33 +1,54 @@
-from setuptools import setup, Extension, Command
-from setuptools.command.build_ext import build_ext
+from setuptools import setup, Extension
 from Cython.Build import cythonize
 import numpy
 import os
-import glob
+import sys
+import platform
 import multiprocessing as mp
 
 
-ARGS = ["-O3", "-ffast-math", "-march=native", "-mtune=native", "-finline-functions"]
 MACROS: list[tuple[str, str | None]] = [("NPY_NO_DEPRECATED_API", "NPY_2_3_API_VERSION")]
 LAPJV_DIR = os.path.join("vendor", "lapjv")
 
+# Portable builds (cibuildwheel, conda-build) should not use arch-specific flags
+# that would make the binary incompatible with other CPUs.
+_IS_PORTABLE = (
+    os.environ.get("CIBUILDWHEEL") == "1"
+    or os.environ.get("CONDA_BUILD") == "1"
+)
+
+
+def get_compile_args(is_cpp=False):
+    """Return compiler flags appropriate for the current platform and build mode."""
+    if sys.platform == "win32":
+        args = ["/O2", "/fp:fast"]
+        if is_cpp:
+            args.append("/std:c++14")
+    else:
+        args = ["-O3", "-ffast-math"]
+        if not _IS_PORTABLE:
+            # Source install: optimize for the user's CPU
+            if sys.platform == "darwin" and platform.machine() == "arm64":
+                # Apple Clang on arm64 doesn't reliably support -march=native
+                args.append("-mcpu=apple-m1")
+            else:
+                args.extend(["-march=native", "-mtune=native"])
+        elif sys.platform == "darwin" and platform.machine() == "arm64":
+            # Portable wheel on Apple Silicon: safe baseline for all M-series chips
+            args.append("-mcpu=apple-m1")
+        if is_cpp:
+            args.append("-std=c++11")
+    return args
+
 
 extensions = [
-    # References (for testing only)
-    Extension(
-        "references.bytetrack.cython_bbox",
-        ["references/bytetrack/cython_bbox.pyx"],
-        include_dirs=[numpy.get_include()],
-        define_macros=MACROS,
-        extra_compile_args=ARGS,
-    ),
     # SORT
     Extension(
         "pyxtrackers.sort.kalman_filter",
         ["pyxtrackers/sort/kalman_filter.pyx"],
         include_dirs=[numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS,
+        extra_compile_args=get_compile_args(),
     ),
     Extension(
         "pyxtrackers.sort.sort",
@@ -37,7 +58,7 @@ extensions = [
         ],
         include_dirs=[LAPJV_DIR, numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS + ["-std=c++11"],
+        extra_compile_args=get_compile_args(is_cpp=True),
         language="c++",
     ),
     # OC-SORT
@@ -46,7 +67,7 @@ extensions = [
         ["pyxtrackers/ocsort/kalman_filter.pyx"],
         include_dirs=[numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS,
+        extra_compile_args=get_compile_args(),
     ),
     Extension(
         "pyxtrackers.ocsort.association",
@@ -56,7 +77,7 @@ extensions = [
         ],
         include_dirs=[LAPJV_DIR, numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS + ["-std=c++11"],
+        extra_compile_args=get_compile_args(is_cpp=True),
         language="c++",
     ),
     Extension(
@@ -64,7 +85,7 @@ extensions = [
         ["pyxtrackers/ocsort/ocsort.pyx"],
         include_dirs=[numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS + ["-std=c++11"],
+        extra_compile_args=get_compile_args(is_cpp=True),
         language="c++",
     ),
     # Utils
@@ -73,7 +94,7 @@ extensions = [
         ["pyxtrackers/utils/scale.pyx"],
         include_dirs=[numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS,
+        extra_compile_args=get_compile_args(),
     ),
     # ByteTrack
     Extension(
@@ -81,7 +102,7 @@ extensions = [
         ["pyxtrackers/bytetrack/kalman_filter.pyx"],
         include_dirs=[numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS,
+        extra_compile_args=get_compile_args(),
     ),
     Extension(
         "pyxtrackers.bytetrack.matching",
@@ -91,7 +112,7 @@ extensions = [
         ],
         include_dirs=[LAPJV_DIR, numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS + ["-std=c++11"],
+        extra_compile_args=get_compile_args(is_cpp=True),
         language="c++",
     ),
     Extension(
@@ -99,18 +120,20 @@ extensions = [
         ["pyxtrackers/bytetrack/bytetrack.pyx"],
         include_dirs=[numpy.get_include()],
         define_macros=MACROS,
-        extra_compile_args=ARGS + ["-std=c++11"],
+        extra_compile_args=get_compile_args(is_cpp=True),
         language="c++",
     ),
 ]
 
-
-class BuildExt(build_ext):
-    """Custom build_ext command that defaults to --inplace."""
-
-    def initialize_options(self):
-        super().initialize_options()
-        self.inplace = True
+# Test-only reference extension: only compile for local development, not for distribution
+if not _IS_PORTABLE:
+    extensions.insert(0, Extension(
+        "references.bytetrack.cython_bbox",
+        ["references/bytetrack/cython_bbox.pyx"],
+        include_dirs=[numpy.get_include()],
+        define_macros=MACROS,
+        extra_compile_args=get_compile_args(),
+    ))
 
 
 ext_modules = cythonize(
@@ -156,6 +179,5 @@ ext_modules = cythonize(
 
 setup(
     ext_modules=ext_modules,
-    cmdclass={ "build_ext": BuildExt },
     zip_safe=False,
 )

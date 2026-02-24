@@ -19,8 +19,8 @@ import pytest
 DETECTION_PATH = os.path.join(os.path.dirname(__file__), "data", "detection.jsonl")
 TOLERANCE = 1e-6
 IMG_H, IMG_W = 1080, 1920
-SCALES = [1]
-LENGTHS = [1]
+SCALES = [1, 2, 4, 6, 8, 10]
+LENGTHS = [4]
 
 _PERF_RECORDS: list[dict] = []
 

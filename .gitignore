@@ -12,5 +12,8 @@ dist/
 *.egg-info/
 *.spec
 
+# Test results
+test-results/
+
 # Virtual environments
 .venv/

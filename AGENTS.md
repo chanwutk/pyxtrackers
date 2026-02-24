@@ -69,23 +69,48 @@ from pyxtrackers.bytetrack import BYTETracker
 from pyxtrackers.ocsort import OCSort
 ```
 
-## Development Workflow (uv)
+## Development Workflow
 
-uv is the recommended project manager. It handles environment creation, dependency resolution, and lockfile management. The build backend is setuptools (uv delegates all compilation to it).
+The build backend is setuptools. Use pip for installation and dependency management. No third-party project managers (uv, poetry, etc.) — standard pip + venv is sufficient for this project's scope.
 
 ### First-Time Setup
 
 ```bash
-uv sync                                  # Creates .venv, installs deps + editable project
-uv run python setup.py build_ext --inplace  # Compile Cython extensions (.pyx → .so)
+python -m venv .venv                     # Create virtual environment
+source .venv/bin/activate                # Activate (Linux/macOS)
+# .venv\Scripts\activate                 # Activate (Windows)
+pip install -e ".[dev]"                  # Install package + dev dependencies
+python setup.py build_ext --inplace      # Compile Cython extensions (.pyx → .so)
 ```
 
 ### Common Commands
 
 ```bash
-uv run pytest tests/ -v                  # Run tests
-uv run python setup.py build_ext --inplace  # Rebuild extensions after .pyx changes
+pytest tests/ -v                         # Run tests
+python setup.py build_ext --inplace      # Rebuild after changing .pyx files
 ```
+
+### Why editable install (`-e`) + explicit `build_ext --inplace`
+
+We use `pip install -e .` (editable) for development instead of `pip install .` (non-editable):
+
+- **Editable (`-e`)**: Python imports resolve directly from the source tree. Editing a `.py` file takes effect immediately without reinstalling. But `.so` files (compiled Cython) may not be placed in the source tree depending on the setuptools version, so we run `python setup.py build_ext --inplace` explicitly to guarantee `.so` files land next to the `.pyx` files.
+- **Non-editable**: Copies everything to `site-packages/`. Every change (even `.py`) requires a full `pip install .`, which recompiles all Cython extensions from scratch. Too slow for iterative development.
+
+The dev workflow is:
+- Edited `.py` → do nothing, changes are picked up immediately
+- Edited `.pyx` → run `python setup.py build_ext --inplace` (incremental, only recompiles changed files)
+
+For end users, `pip install pyxtrackers` or `pip install .` (non-editable) always places `.so` files correctly — the editable quirk only affects development.
+
+### Dependency management
+
+Build dependencies (Cython, numpy, setuptools-scm) are declared once in `[build-system].requires` in `pyproject.toml`. pip installs them automatically during `pip install -e .` or `pip install .`. They should NOT be duplicated in `[project.optional-dependencies].dev` — the dev extra only contains tools that are genuinely dev-only (pytest, filterpy, lap, pyinstaller, altair, vl-convert-python).
+
+- Runtime dependencies: edit `[project].dependencies` in `pyproject.toml`
+- Build dependencies: edit `[build-system].requires` in `pyproject.toml`
+- Dev-only dependencies: edit `[project.optional-dependencies].dev` in `pyproject.toml`
+- Then run `pip install -e ".[dev]"` to apply changes
 
 ### Versioning
 
@@ -117,46 +142,18 @@ Note: PEP 440 normalizes leading zeros, so the version is `2026.2.23` not `2026.
 
 ### Managing Dependencies
 
-```bash
-uv add <package>                         # Add runtime dependency
-uv add --dev <package>                   # Add dev dependency (to [dependency-groups].dev)
-uv add --group lint <package>            # Add to a custom group
-uv remove <package>                      # Remove dependency
-```
-
-All `uv add`/`uv remove` commands update both `pyproject.toml` and `uv.lock` atomically.
-
-### Updating Dependencies
-
-```bash
-uv lock --upgrade                        # Upgrade all deps to latest compatible versions
-uv lock --upgrade-package numpy          # Upgrade a single package
-uv sync                                  # Apply lockfile changes to environment
-uv lock --check                          # Validate lockfile is current (for CI)
-```
-
-### Alternative: pip Install
-
-```bash
-pip install -e .                         # Editable install (triggers build_ext)
-pip install .                            # Regular install
-```
-
-### CI Notes
-
-- Always commit `uv.lock` to version control.
-- Use `uv sync --locked` in CI to fail if the lockfile is stale.
-- Use `uv sync --frozen` in Docker builds to skip lockfile validation.
-- Pin the uv version in CI for reproducibility (e.g., `astral-sh/setup-uv@v7` with `version: "0.10.4"`).
+- Runtime dependencies: edit `[project].dependencies` in `pyproject.toml`
+- Dev dependencies: edit `[project.optional-dependencies].dev` in `pyproject.toml`
+- Then run `pip install -e ".[dev]"` to apply changes
 
 ## Running Tests
 
 Tests compare Python reference implementations against Cython implementations on shared detection data.
 
 ```bash
-uv run pytest                            # All tests
-uv run pytest tests/ -v                  # Verbose
-uv run pytest tests/test_sort_comparison.py -v   # Single file
+pytest                                   # All tests
+pytest tests/ -v                         # Verbose
+pytest tests/test_sort_comparison.py -v  # Single file
 ```
 
 Numerical comparison tolerance: 1e-6 pixels.
@@ -202,7 +199,7 @@ pyxtrackers/
 
 ### Build System
 
-- **`pyproject.toml`** — Package metadata (PEP 621), build deps, uv config
+- **`pyproject.toml`** — Package metadata (PEP 621), build deps, pip config
 - **`setup.py`** — Cython extension definitions (setuptools build backend)
 - **`vendor/lapjv/`** — Vendored LAPJV C++ linear assignment solver
 

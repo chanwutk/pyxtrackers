@@ -6,7 +6,7 @@ tracked objects to stdout (one frame per line). This enables any language to
 use pyxtrackers via stdin/stdout pipes.
 
 Input format:  x1,y1,x2,y2,score x1,y1,x2,y2,score ...
-Output format: id,x1,y1,x2,y2 id,x1,y1,x2,y2 ...
+Output format: x1,y1,x2,y2,id x1,y1,x2,y2,id ...
 Empty line = no detections (tracker still advances state, outputs empty line).
 EOF = exit.
 """
@@ -84,13 +84,13 @@ def parse_detections(line: str) -> np.ndarray:
 
 
 def format_tracks(tracks: np.ndarray) -> str:
-    """Format tracked output as ``id,x1,y1,x2,y2 ...``."""
+    """Format tracked output as ``x1,y1,x2,y2,id ...``."""
     if tracks.size == 0:
         return ""
     parts = []
     for row in tracks:
         x1, y1, x2, y2, tid = row
-        parts.append(f"{int(tid)},{x1:.4f},{y1:.4f},{x2:.4f},{y2:.4f}")
+        parts.append(f"{x1:.4f},{y1:.4f},{x2:.4f},{y2:.4f},{int(tid)}")
     return " ".join(parts)
 
 

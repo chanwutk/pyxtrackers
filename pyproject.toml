@@ -16,18 +16,14 @@ dependencies = [
 [project.scripts]
 pyxtrackers = "pyxtrackers.cli:main"
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
-    "cython>=3.0",
     "pytest>=7.0",
     "filterpy>=1.4",
     "lap>=0.5",
-    "setuptools>=82.0.0",
-    "setuptools-scm>=8",
     "pyinstaller>=6.19.0",
     "altair>=5.0",
     "vl-convert-python>=1.0",
-    "build>=1.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -39,9 +35,6 @@ local_scheme = "node-and-date"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.uv]
-default-groups = ["dev"]
 
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"

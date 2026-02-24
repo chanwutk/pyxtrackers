@@ -4,10 +4,15 @@ Compare Python reference trackers against Cython implementations.
 Loads detections from a shared JSONL file, optionally tiles them to increase
 data size (scalability testing), and verifies that each Cython tracker
 produces numerically identical results to its Python reference.
+
+Also tests CLI (subprocess) and binary-CLI (PyInstaller) implementations
+against the same reference, with relaxed tolerance for text-serialized output.
 """
 
 import json
 import os
+import subprocess
+import sys
 import time
 from typing import Any, Callable
 
@@ -18,6 +23,7 @@ import pytest
 
 DETECTION_PATH = os.path.join(os.path.dirname(__file__), "data", "detection.jsonl")
 TOLERANCE = 1e-6
+CLI_TOLERANCE = 1e-4  # Relaxed for :.4f text formatting
 IMG_H, IMG_W = 1080, 1920
 SCALES = [1, 2, 4, 6, 8, 10]
 LENGTHS = [4]
@@ -162,42 +168,174 @@ def run_tracker(
     return tracking_results, perf
 
 
+# ============================================================
+# CLI helpers
+# ============================================================
+
+def _format_dets_for_cli(dets: np.ndarray) -> str:
+    """Format Nx5 detection array as CLI input line (x1,y1,x2,y2,score space-separated)."""
+    if dets.size == 0:
+        return ""
+    parts = []
+    for row in dets:
+        parts.append(f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]}")
+    return " ".join(parts)
+
+
+def _parse_cli_output_line(line: str) -> np.ndarray:
+    """Parse CLI output line (x1,y1,x2,y2,id ...) into Nx5 array [x1,y1,x2,y2,id]."""
+    line = line.strip()
+    if not line:
+        return np.empty((0, 5), dtype=np.float64)
+    tracks = []
+    for token in line.split():
+        parts = token.split(",")
+        x1, y1, x2, y2 = float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])
+        tid = float(parts[4])
+        tracks.append([x1, y1, x2, y2, tid])
+    return np.array(tracks, dtype=np.float64)
+
+
+CLI_INIT_WAIT = 5  # Seconds to wait for CLI process initialization
+
+
+def run_cli_tracker(
+    cmd: list[str],
+    detection_results: list[dict],
+    timeout: int = 120,
+) -> tuple[dict[int, npt.NDArray[np.floating]], dict[str, float]]:
+    """Run a tracker via CLI subprocess, feeding detections through stdin.
+
+    Returns (tracking_results, perf) with the same shape as run_tracker.
+    """
+    # Build input text: one line per frame
+    input_lines = []
+    frame_indices = []
+    for frame_result in detection_results:
+        frame_indices.append(frame_result["frame_idx"])
+        dets = _parse_frame_detections(frame_result)
+        input_lines.append(_format_dets_for_cli(dets))
+    input_text = "\n".join(input_lines) + "\n"
+
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    time.sleep(CLI_INIT_WAIT)
+
+    t0 = time.perf_counter()
+    stdout, stderr = proc.communicate(input=input_text, timeout=timeout)
+    total_time = time.perf_counter() - t0
+
+    if proc.returncode != 0:
+        stderr_truncated = stderr[:2000] if stderr else "(no stderr)"
+        raise RuntimeError(
+            f"CLI process failed: cmd={cmd}, exit_code={proc.returncode}\n"
+            f"stderr: {stderr_truncated}"
+        )
+
+    # Parse output lines
+    output_text = stdout
+    if output_text.endswith("\n"):
+        output_text = output_text[:-1]
+    output_lines = output_text.split("\n") if output_text else []
+
+    if len(output_lines) != len(frame_indices):
+        raise RuntimeError(
+            f"CLI output line count mismatch: expected {len(frame_indices)}, "
+            f"got {len(output_lines)} (cmd={cmd})"
+        )
+
+    tracking_results: dict[int, npt.NDArray[np.floating]] = {}
+    for frame_idx, line in zip(frame_indices, output_lines):
+        tracking_results[frame_idx] = _parse_cli_output_line(line)
+
+    num_frames = len(frame_indices)
+    perf = {
+        "total_time": total_time,
+        "num_frames": num_frames,
+        "avg_ms": (total_time / num_frames * 1000) if num_frames > 0 else 0.0,
+        "median_ms": 0.0,  # No per-frame granularity through a pipe
+        "fps": num_frames / total_time if total_time > 0 else 0.0,
+    }
+
+    return tracking_results, perf
+
+
+# ============================================================
+# Perf recording
+# ============================================================
+
+def _record_perf(
+    tracker: str,
+    impl: str,
+    scale: int,
+    length: int,
+    avg_dets: float,
+    perf: dict[str, float],
+) -> None:
+    """Append a tidy perf record to _PERF_RECORDS."""
+    _PERF_RECORDS.append({
+        "tracker": tracker,
+        "impl": impl,
+        "scale": scale,
+        "length": length,
+        "avg_dets": avg_dets,
+        "total_time": perf["total_time"],
+        "num_frames": perf["num_frames"],
+        "avg_ms": perf["avg_ms"],
+        "median_ms": perf["median_ms"],
+        "fps": perf["fps"],
+    })
+
+
+# ============================================================
+# Comparison helpers
+# ============================================================
+
 def _compare_frames(a: np.ndarray, b: np.ndarray, tolerance: float) -> bool:
     if len(a) != len(b):
         return False
     if len(a) == 0:
         return True
+    # Sort by track ID for robustness
+    a = a[a[:, 4].argsort()]
+    b = b[b[:, 4].argsort()]
     if not np.array_equal(a[:, 4], b[:, 4]):
         return False
     return bool(np.allclose(a[:, :4], b[:, :4], atol=tolerance))
 
 
 def assert_results_match(
-    results_py: dict[int, npt.NDArray[np.floating]],
-    results_cy: dict[int, npt.NDArray[np.floating]],
+    results_ref: dict[int, npt.NDArray[np.floating]],
+    results_test: dict[int, npt.NDArray[np.floating]],
     tracker_name: str,
-    perf_py: dict[str, float] | None = None,
-    perf_cy: dict[str, float] | None = None,
+    tolerance: float = TOLERANCE,
+    perf_ref: dict[str, float] | None = None,
+    perf_test: dict[str, float] | None = None,
 ) -> None:
-    all_frames = sorted(set(results_py) | set(results_cy))
+    all_frames = sorted(set(results_ref) | set(results_test))
     empty = np.empty((0, 5), dtype=np.float64)
     n_differ = 0
     first_diff_frame: int | None = None
 
     for frame_idx in all_frames:
-        a = results_py.get(frame_idx, empty)
-        b = results_cy.get(frame_idx, empty)
-        if not _compare_frames(a, b, TOLERANCE):
+        a = results_ref.get(frame_idx, empty)
+        b = results_test.get(frame_idx, empty)
+        if not _compare_frames(a, b, tolerance):
             n_differ += 1
             if first_diff_frame is None:
                 first_diff_frame = frame_idx
 
-    if perf_py and perf_cy:
-        speedup = perf_py["total_time"] / perf_cy["total_time"] if perf_cy["total_time"] > 0 else 0
+    if perf_ref and perf_test:
+        speedup = perf_ref["total_time"] / perf_test["total_time"] if perf_test["total_time"] > 0 else 0
         print(
             f"\n{tracker_name}: {len(all_frames)} frames | "
-            f"Python {perf_py['avg_ms']:.3f}ms/frame ({perf_py['fps']:.0f} fps) | "
-            f"Cython {perf_cy['avg_ms']:.3f}ms/frame ({perf_cy['fps']:.0f} fps) | "
+            f"Ref {perf_ref['avg_ms']:.3f}ms/frame ({perf_ref['fps']:.0f} fps) | "
+            f"Test {perf_test['avg_ms']:.3f}ms/frame ({perf_test['fps']:.0f} fps) | "
             f"{speedup:.1f}x speedup"
         )
 
@@ -214,12 +352,14 @@ def assert_results_match(
 
 @pytest.mark.parametrize("length", LENGTHS, ids=[f"len{l}" for l in LENGTHS])
 @pytest.mark.parametrize("scale", SCALES, ids=[f"s{s}" for s in SCALES])
-def test_sort_comparison(scale: int, length: int):
+def test_sort_comparison(scale: int, length: int, request):
     detection_results = load_detection_results(DETECTION_PATH)
     detection_results = stack_detections(detection_results, scale)
     detection_results = repeat_detections(detection_results, length)
     avg_dets = _avg_dets_per_frame(detection_results)
+    label = f"SORT s{scale}-len{length}"
 
+    # 1. Python reference
     from references.sort.sort import Sort as SortPython, KalmanBoxTracker
     from pyxtrackers.sort.sort import Sort as SortCython
 
@@ -231,28 +371,45 @@ def test_sort_comparison(scale: int, length: int):
         SortPython(max_age=20, min_hits=1, iou_threshold=0.1),
         detection_results, update,
     )
+    _record_perf("SORT", "python", scale, length, avg_dets, perf_py)
 
+    # 2. Cython direct
     KalmanBoxTracker.count = 0
     results_cy, perf_cy = run_tracker(
         SortCython(max_age=20, min_hits=1, iou_threshold=0.1),
         detection_results, update,
     )
+    assert_results_match(results_py, results_cy, f"{label} [cython]",
+                         tolerance=TOLERANCE, perf_ref=perf_py, perf_test=perf_cy)
+    _record_perf("SORT", "cython", scale, length, avg_dets, perf_cy)
 
-    assert_results_match(results_py, results_cy, f"SORT s{scale}-len{length}", perf_py, perf_cy)
-    _PERF_RECORDS.append({
-        "tracker": "SORT", "scale": scale, "length": length,
-        "avg_dets": avg_dets, "fps_py": perf_py["fps"], "fps_cy": perf_cy["fps"],
-        "speedup": perf_py["total_time"] / perf_cy["total_time"] if perf_cy["total_time"] > 0 else 0,
-    })
+    # 3. CLI (always runs)
+    cmd = [sys.executable, "-m", "pyxtrackers.cli",
+           "sort", "--max-age", "20", "--min-hits", "1", "--iou-threshold", "0.1"]
+    results_cli, perf_cli = run_cli_tracker(cmd, detection_results)
+    assert_results_match(results_py, results_cli, f"{label} [cli]",
+                         tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_cli)
+    _record_perf("SORT", "cli", scale, length, avg_dets, perf_cli)
+
+    # 4. Binary CLI (only if --cli-binary provided)
+    binary_path = request.config.getoption("--cli-binary")
+    if binary_path:
+        cmd = [binary_path,
+               "sort", "--max-age", "20", "--min-hits", "1", "--iou-threshold", "0.1"]
+        results_bin, perf_bin = run_cli_tracker(cmd, detection_results)
+        assert_results_match(results_py, results_bin, f"{label} [binary-cli]",
+                             tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_bin)
+        _record_perf("SORT", "binary-cli", scale, length, avg_dets, perf_bin)
 
 
 @pytest.mark.parametrize("length", LENGTHS, ids=[f"len{l}" for l in LENGTHS])
 @pytest.mark.parametrize("scale", SCALES, ids=[f"s{s}" for s in SCALES])
-def test_ocsort_comparison(scale: int, length: int):
+def test_ocsort_comparison(scale: int, length: int, request):
     detection_results = load_detection_results(DETECTION_PATH)
     detection_results = stack_detections(detection_results, scale)
     detection_results = repeat_detections(detection_results, length)
     avg_dets = _avg_dets_per_frame(detection_results)
+    label = f"OC-SORT s{scale}-len{length}"
 
     from references.ocsort.ocsort import OCSort as OCSortPython, KalmanBoxTracker
     from pyxtrackers.ocsort.ocsort import OCSort as OCSortCython
@@ -267,33 +424,49 @@ def test_ocsort_comparison(scale: int, length: int):
     def update_cython(tracker, dets):
         return tracker.update(dets)
 
+    # 1. Python reference
     KalmanBoxTracker.count = 0
     results_py, perf_py = run_tracker(
         OCSortPython(det_thresh=0.3),
         detection_results, update_python,
     )
+    _record_perf("OC-SORT", "python", scale, length, avg_dets, perf_py)
 
+    # 2. Cython direct
     KalmanBoxTracker.count = 0
     results_cy, perf_cy = run_tracker(
         OCSortCython(det_thresh=0.3),
         detection_results, update_cython,
     )
+    assert_results_match(results_py, results_cy, f"{label} [cython]",
+                         tolerance=TOLERANCE, perf_ref=perf_py, perf_test=perf_cy)
+    _record_perf("OC-SORT", "cython", scale, length, avg_dets, perf_cy)
 
-    assert_results_match(results_py, results_cy, f"OC-SORT s{scale}-len{length}", perf_py, perf_cy)
-    _PERF_RECORDS.append({
-        "tracker": "OC-SORT", "scale": scale, "length": length,
-        "avg_dets": avg_dets, "fps_py": perf_py["fps"], "fps_cy": perf_cy["fps"],
-        "speedup": perf_py["total_time"] / perf_cy["total_time"] if perf_cy["total_time"] > 0 else 0,
-    })
+    # 3. CLI (always runs)
+    cmd = [sys.executable, "-m", "pyxtrackers.cli", "ocsort", "--det-thresh", "0.3"]
+    results_cli, perf_cli = run_cli_tracker(cmd, detection_results)
+    assert_results_match(results_py, results_cli, f"{label} [cli]",
+                         tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_cli)
+    _record_perf("OC-SORT", "cli", scale, length, avg_dets, perf_cli)
+
+    # 4. Binary CLI (only if --cli-binary provided)
+    binary_path = request.config.getoption("--cli-binary")
+    if binary_path:
+        cmd = [binary_path, "ocsort", "--det-thresh", "0.3"]
+        results_bin, perf_bin = run_cli_tracker(cmd, detection_results)
+        assert_results_match(results_py, results_bin, f"{label} [binary-cli]",
+                             tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_bin)
+        _record_perf("OC-SORT", "binary-cli", scale, length, avg_dets, perf_bin)
 
 
 @pytest.mark.parametrize("length", LENGTHS, ids=[f"len{l}" for l in LENGTHS])
 @pytest.mark.parametrize("scale", SCALES, ids=[f"s{s}" for s in SCALES])
-def test_bytetrack_comparison(scale: int, length: int):
+def test_bytetrack_comparison(scale: int, length: int, request):
     detection_results = load_detection_results(DETECTION_PATH)
     detection_results = stack_detections(detection_results, scale)
     detection_results = repeat_detections(detection_results, length)
     avg_dets = _avg_dets_per_frame(detection_results)
+    label = f"ByteTrack s{scale}-len{length}"
 
     from references.bytetrack.byte_tracker import BYTETracker as BYTETrackerPython
     from references.bytetrack.basetrack import BaseTrack
@@ -323,20 +496,37 @@ def test_bytetrack_comparison(scale: int, length: int):
         match_thresh = 0.8
         mot20 = False
 
+    # 1. Python reference
     BaseTrack._count = 0
     results_py, perf_py = run_tracker(
         BYTETrackerPython(Args()), detection_results, update_python,
     )
+    _record_perf("ByteTrack", "python", scale, length, avg_dets, perf_py)
 
+    # 2. Cython direct
     BaseTrack._count = 0
     results_cy, perf_cy = run_tracker(
         BYTETrackerCython(track_thresh=0.5, match_thresh=0.8, track_buffer=30, mot20=False),
         detection_results, update_cython,
     )
+    assert_results_match(results_py, results_cy, f"{label} [cython]",
+                         tolerance=TOLERANCE, perf_ref=perf_py, perf_test=perf_cy)
+    _record_perf("ByteTrack", "cython", scale, length, avg_dets, perf_cy)
 
-    assert_results_match(results_py, results_cy, f"ByteTrack s{scale}-len{length}", perf_py, perf_cy)
-    _PERF_RECORDS.append({
-        "tracker": "ByteTrack", "scale": scale, "length": length,
-        "avg_dets": avg_dets, "fps_py": perf_py["fps"], "fps_cy": perf_cy["fps"],
-        "speedup": perf_py["total_time"] / perf_cy["total_time"] if perf_cy["total_time"] > 0 else 0,
-    })
+    # 3. CLI (always runs)
+    cmd = [sys.executable, "-m", "pyxtrackers.cli",
+           "bytetrack", "--track-thresh", "0.5", "--match-thresh", "0.8", "--track-buffer", "30"]
+    results_cli, perf_cli = run_cli_tracker(cmd, detection_results)
+    assert_results_match(results_py, results_cli, f"{label} [cli]",
+                         tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_cli)
+    _record_perf("ByteTrack", "cli", scale, length, avg_dets, perf_cli)
+
+    # 4. Binary CLI (only if --cli-binary provided)
+    binary_path = request.config.getoption("--cli-binary")
+    if binary_path:
+        cmd = [binary_path,
+               "bytetrack", "--track-thresh", "0.5", "--match-thresh", "0.8", "--track-buffer", "30"]
+        results_bin, perf_bin = run_cli_tracker(cmd, detection_results)
+        assert_results_match(results_py, results_bin, f"{label} [binary-cli]",
+                             tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_bin)
+        _record_perf("ByteTrack", "binary-cli", scale, length, avg_dets, perf_bin)

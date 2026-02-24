@@ -32,7 +32,7 @@ def pytest_collection_modifyitems(config, items):
     deselected = []
     selected = []
     for item in items:
-        if any(f"s{s}" in item.nodeid for s in (4, 6, 8, 10,)):
+        if any(f"s{s}" in item.nodeid for s in (2, 4, 6, 8, 10,)):
             deselected.append(item)
         else:
             selected.append(item)

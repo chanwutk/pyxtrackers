@@ -41,7 +41,7 @@ pip install -e .
 ### Requirements
 
 - Python >= 3.10
-- NumPy >= 2.0
+- NumPy >= 1.22 (Python 3.10–3.11), >= 1.26 (Python 3.12), >= 2.1 (Python 3.13+)
 - A C/C++ compiler (gcc, clang, or MSVC)
 - Cython >= 3.0 (build-time only)
 

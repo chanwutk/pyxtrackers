@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "setuptools-scm>=8", "Cython>=3.0", "numpy>=2.0"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "Cython>=3.0", "numpy>=1.22"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,7 +10,9 @@ readme = "README.md"
 license-files = ["LICENSE", "vendor/*/LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
-    "numpy>=2.0",
+    "numpy>=1.22; python_version<'3.12'",
+    "numpy>=1.26; python_version>='3.12' and python_version<'3.13'",
+    "numpy>=2.1; python_version>='3.13'",
 ]
 
 [project.scripts]

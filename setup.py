@@ -8,7 +8,7 @@ import platform
 import multiprocessing as mp
 
 
-MACROS: list[tuple[str, str | None]] = [("NPY_NO_DEPRECATED_API", "NPY_2_3_API_VERSION")]
+MACROS: list[tuple[str, str | None]] = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
 LAPJV_DIR = os.path.join("vendor", "lapjv")
 
 # Portable builds (cibuildwheel, conda-build) should not use arch-specific flags

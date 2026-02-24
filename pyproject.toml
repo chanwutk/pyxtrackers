@@ -18,6 +18,7 @@ pyxtrackers = "pyxtrackers.cli:main"
 
 [project.optional-dependencies]
 dev = [
+    "Cython>=3.0",
     "pytest>=7.0",
     "filterpy>=1.4",
     "lap>=0.5",

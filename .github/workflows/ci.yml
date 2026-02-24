@@ -32,9 +32,6 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
-      - name: Build Cython extensions
-        run: python setup.py build_ext --inplace
-
       - name: Build standalone binary
         run: pyinstaller pyxtrackers.spec
 

@@ -79,8 +79,7 @@ The build backend is setuptools. Use pip for installation and dependency managem
 python -m venv .venv                     # Create virtual environment
 source .venv/bin/activate                # Activate (Linux/macOS)
 # .venv\Scripts\activate                 # Activate (Windows)
-pip install -e ".[dev]"                  # Install package + dev dependencies
-python setup.py build_ext --inplace      # Compile Cython extensions (.pyx → .so)
+pip install -e ".[dev]"                  # Install package + dev dependencies + Cython
 ```
 
 ### Common Commands
@@ -90,22 +89,22 @@ pytest tests/ -v                         # Run tests
 python setup.py build_ext --inplace      # Rebuild after changing .pyx files
 ```
 
-### Why editable install (`-e`) + explicit `build_ext --inplace`
+### Why editable install (`-e`)
 
 We use `pip install -e .` (editable) for development instead of `pip install .` (non-editable):
 
-- **Editable (`-e`)**: Python imports resolve directly from the source tree. Editing a `.py` file takes effect immediately without reinstalling. But `.so` files (compiled Cython) may not be placed in the source tree depending on the setuptools version, so we run `python setup.py build_ext --inplace` explicitly to guarantee `.so` files land next to the `.pyx` files.
+- **Editable (`-e`)**: Python imports resolve directly from the source tree. Editing a `.py` file takes effect immediately without reinstalling. With `setuptools>=68` (required in `pyproject.toml`), editable installs correctly place `.so` files in the source tree next to the `.pyx` files.
 - **Non-editable**: Copies everything to `site-packages/`. Every change (even `.py`) requires a full `pip install .`, which recompiles all Cython extensions from scratch. Too slow for iterative development.
 
 The dev workflow is:
 - Edited `.py` → do nothing, changes are picked up immediately
 - Edited `.pyx` → run `python setup.py build_ext --inplace` (incremental, only recompiles changed files)
 
-For end users, `pip install pyxtrackers` or `pip install .` (non-editable) always places `.so` files correctly — the editable quirk only affects development.
+Note: `build_ext --inplace` requires Cython, which is why Cython is included in the dev extras.
 
 ### Dependency management
 
-Build dependencies (Cython, numpy, setuptools-scm) are declared once in `[build-system].requires` in `pyproject.toml`. pip installs them automatically during `pip install -e .` or `pip install .`. They should NOT be duplicated in `[project.optional-dependencies].dev` — the dev extra only contains tools that are genuinely dev-only (pytest, filterpy, lap, pyinstaller, altair, vl-convert-python).
+Build dependencies (Cython, numpy, setuptools-scm) are declared in `[build-system].requires` in `pyproject.toml`. pip installs them automatically in an **isolated build environment** during `pip install -e .` or `pip install .`, then discards that environment. Cython is additionally listed in `[project.optional-dependencies].dev` so it remains available in the development environment for running `python setup.py build_ext --inplace` after editing `.pyx` files.
 
 - Runtime dependencies: edit `[project].dependencies` in `pyproject.toml`
 - Build dependencies: edit `[build-system].requires` in `pyproject.toml`

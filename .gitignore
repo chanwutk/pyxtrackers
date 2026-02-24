@@ -10,7 +10,6 @@ pyxtrackers/**/*.html
 build/
 dist/
 *.egg-info/
-*.spec
 
 # Test results
 test-results/

@@ -46,7 +46,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pypa/cibuildwheel@v2
+      - uses: pypa/cibuildwheel@v3
         env:
           # Each runner builds only its native architecture
           CIBW_ARCHS: auto
@@ -86,9 +86,6 @@ jobs:
 
       - name: Install package and PyInstaller
         run: pip install -e . && pip install pyinstaller
-
-      - name: Build Cython extensions
-        run: python setup.py build_ext --inplace
 
       - name: Build standalone binary
         run: pyinstaller pyxtrackers.spec

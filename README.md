@@ -116,7 +116,6 @@ python -m venv .venv
 source .venv/bin/activate      # Linux/macOS
 # .venv\Scripts\activate       # Windows
 pip install -e ".[dev]"
-python setup.py build_ext --inplace
 
 # After editing .py files  → no action needed, changes take effect immediately
 # After editing .pyx files → rebuild the changed extensions:
@@ -224,8 +223,9 @@ for line in reader.lines() {
 
 ## Roadmap
 
-- [ ] Add GitHub Actions CI to test across environments.
-- [ ] Make this package available in PyPI and possibly conda. Consideration: we should pre-build the binary; based on whether the users have their own C compiler, we may distribute the prebuit version.
+- [x] Add GitHub Actions CI to test across environments.
+- [x] Make this package available in PyPI with pre-built wheels for all major platforms.
+- [ ] Publish to conda-forge.
 
 ## License
 

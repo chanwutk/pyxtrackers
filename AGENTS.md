@@ -134,16 +134,12 @@ Note: PEP 440 normalizes leading zeros, so the version is `2026.2.23` not `2026.
 
 ### Build Flags
 
-`setup.py` auto-detects the platform and build context:
-- **Source install** (`pip install .`): Uses `-march=native` for max performance on the user's CPU
-- **Binary wheels** (cibuildwheel/conda-build): Uses portable flags only (no `-march=native`)
+`setup.py` auto-detects the platform and build context via `_get_arch_args()`:
+- **macOS universal2 Python** (CFLAGS contains both `-arch arm64` and `-arch x86_64`): No arch-specific flags — the compiler runs for both architectures in one pass, so no single `-march`/`-mcpu` is valid
+- **macOS ARM (non-universal)**: Uses `-mcpu=apple-m1` (Apple Clang doesn't support `-march=native` on ARM)
+- **Source install on single-arch** (non-portable, non-universal): Uses `-march=native -mtune=native` for max performance on the user's CPU
+- **Binary wheels** (cibuildwheel/conda-build, detected via `CIBUILDWHEEL` or `CONDA_BUILD` env vars): Portable flags only (no arch-specific flags, except `-mcpu=apple-m1` on ARM)
 - **Windows** (MSVC): Uses `/O2 /fp:fast` instead of GCC/Clang flags
-
-### Managing Dependencies
-
-- Runtime dependencies: edit `[project].dependencies` in `pyproject.toml`
-- Dev dependencies: edit `[project.optional-dependencies].dev` in `pyproject.toml`
-- Then run `pip install -e ".[dev]"` to apply changes
 
 ## Running Tests
 

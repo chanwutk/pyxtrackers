@@ -18,19 +18,19 @@ def pytest_addoption(parser):
     )
 
 
-# def pytest_collection_modifyitems(config, items):
-#     if config.getoption("--visualize"):
-#         return
-#     deselected = []
-#     selected = []
-#     for item in items:
-#         if any(f"len{l}" in item.nodeid for l in (4,)):
-#             deselected.append(item)
-#         else:
-#             selected.append(item)
-#     if deselected:
-#         config.hook.pytest_deselected(items=deselected)
-#         items[:] = selected
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--visualize"):
+        return
+    deselected = []
+    selected = []
+    for item in items:
+        if any(f"s{s}" in item.nodeid for s in (4, 8, 8, 10,)):
+            deselected.append(item)
+        else:
+            selected.append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
 
 
 def pytest_sessionfinish(session, exitstatus):

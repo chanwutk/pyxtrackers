@@ -24,8 +24,6 @@ dev = [
     "lap>=0.5",
     "setuptools>=82.0.0",
     "setuptools-scm>=8",
-    "torch>=2.10.0",
-    "opencv-python-headless>=4.13.0.92",
     "pyinstaller>=6.19.0",
     "altair>=5.0",
     "vl-convert-python>=1.0",
@@ -35,7 +33,7 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["pyxtrackers*"]
 
-[tool.setuptools-scm]
+[tool.setuptools_scm]
 version_scheme = "calver-by-date"
 local_scheme = "node-and-date"
 

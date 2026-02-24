@@ -106,16 +106,10 @@ def pytest_sessionfinish(session, exitstatus):
         )
     )
 
-    reference_line = (
-        alt.Chart(alt.Data(values=[{"y": 1}]))
-        .mark_rule(color="gray", strokeDash=[4, 4], opacity=0.5)
-        .encode(y="y:Q")
-    )
-
     chart2 = (
         base_speedup.encode(y=alt.Y("speedup:Q", title="Speedup (Python time / Cython time)"))
         .properties(title="Cython Speedup over Python (Ours / Original)", width=860, height=400)
-    ) + reference_line
+    )
 
     speedup_path = os.path.join(assets_dir, "speedup.png")
     chart2.save(speedup_path, scale_factor=2)

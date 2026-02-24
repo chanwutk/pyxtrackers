@@ -3,6 +3,7 @@ from Cython.Build import cythonize
 import numpy
 import os
 import sys
+import sysconfig
 import platform
 import multiprocessing as mp
 
@@ -18,6 +19,23 @@ _IS_PORTABLE = (
 )
 
 
+def _get_arch_args():
+    """Return arch-specific optimization flags for non-Windows platforms."""
+    cflags = sysconfig.get_config_var("CFLAGS") or ""
+    is_universal = "-arch arm64" in cflags and "-arch x86_64" in cflags
+    if is_universal:
+        # Universal2 Python: compiler runs for both arm64 and x86_64 in one
+        # pass, so no single arch flag is valid for both
+        return []
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        # Apple Clang on arm64 doesn't support -march=native
+        return ["-mcpu=apple-m1"]
+    if not _IS_PORTABLE:
+        # Source install on single-arch: optimize for the user's CPU
+        return ["-march=native", "-mtune=native"]
+    return []
+
+
 def get_compile_args(is_cpp=False):
     """Return compiler flags appropriate for the current platform and build mode."""
     if sys.platform == "win32":
@@ -25,17 +43,7 @@ def get_compile_args(is_cpp=False):
         if is_cpp:
             args.append("/std:c++14")
     else:
-        args = ["-O3", "-ffast-math"]
-        if not _IS_PORTABLE:
-            # Source install: optimize for the user's CPU
-            if sys.platform == "darwin" and platform.machine() == "arm64":
-                # Apple Clang on arm64 doesn't reliably support -march=native
-                args.append("-mcpu=apple-m1")
-            else:
-                args.extend(["-march=native", "-mtune=native"])
-        elif sys.platform == "darwin" and platform.machine() == "arm64":
-            # Portable wheel on Apple Silicon: safe baseline for all M-series chips
-            args.append("-mcpu=apple-m1")
+        args = ["-O3", "-ffast-math"] + _get_arch_args()
         if is_cpp:
             args.append("-std=c++11")
     return args

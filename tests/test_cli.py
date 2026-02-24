@@ -65,7 +65,7 @@ class TestFormatTracks:
             [150.0, 250.0, 350.0, 450.0, 2.0],
         ])
         result = format_tracks(tracks)
-        assert result == "1,100.0000,200.0000,300.0000,400.0000 2,150.0000,250.0000,350.0000,450.0000"
+        assert result == "100.0000,200.0000,300.0000,400.0000,1 150.0000,250.0000,350.0000,450.0000,2"
 
     def test_empty(self):
         tracks = np.empty((0, 5))
@@ -75,12 +75,12 @@ class TestFormatTracks:
     def test_single_track(self):
         tracks = np.array([[10.5, 20.5, 30.5, 40.5, 3.0]])
         result = format_tracks(tracks)
-        assert result == "3,10.5000,20.5000,30.5000,40.5000"
+        assert result == "10.5000,20.5000,30.5000,40.5000,3"
 
     def test_track_id_is_integer(self):
         tracks = np.array([[0, 0, 10, 10, 5.0]])
         result = format_tracks(tracks)
-        assert result.startswith("5,")
+        assert result.endswith(",5")
 
 
 # ============================================================
@@ -264,8 +264,8 @@ class TestCLIIntegration:
             cli_tracks = []
             for token in cli_line.strip().split():
                 parts = token.split(",")
-                tid = int(parts[0])
-                x1, y1, x2, y2 = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                x1, y1, x2, y2 = float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])
+                tid = int(parts[4])
                 cli_tracks.append([x1, y1, x2, y2, tid])
             cli_arr = np.array(cli_tracks, dtype=np.float64)
 

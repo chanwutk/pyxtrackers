@@ -20,15 +20,63 @@ def load_records(path: str) -> list[dict]:
                 records.append(json.loads(line))
     return records
 
+IMPL_MAPPING = [
+    ("cython", "Cython (Direct Import)"),
+    ("cli", "Cython (CLI)"),
+    # ("binary-cli", "Cython (Binary CLI)"),
+    ("python", "Python"),
+]
+
+
+def get_implementation(impl: str) -> str:
+    return dict(IMPL_MAPPING).get(impl, impl)
+
 
 def generate_charts(records: list[dict], output_dir: str) -> None:
     import altair as alt
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Identify which implementations are present
-    impls = sorted(set(r["impl"] for r in records))
-    non_python_impls = [i for i in impls if i != "python"]
+    tracker_shape = alt.Shape(
+        "tracker:N",
+        scale=alt.Scale(
+            domain=["SORT", "ByteTrack", "OC-SORT"],
+            range=["triangle", "circle", "diamond", "square"],
+        ),
+        legend=alt.Legend(orient="bottom", title="Tracker"),
+    )
+    python_label = get_implementation("python")
+
+    def build_line_points(rows: list[dict], impls: list[str]) -> alt.LayerChart:
+        dash_range = [[4, 4] if i == python_label else [0, 0] for i in impls]
+        opacity_range = [0.4 if i == python_label else 1.0 for i in impls]
+
+        base = alt.Chart(alt.Data(values=rows)).encode(shape=tracker_shape)
+        line = base.mark_line().encode(
+            color=alt.Color(
+                "impl:N", legend=alt.Legend(orient="bottom", title="Implementation")
+            ),
+            strokeDash=alt.StrokeDash(
+                "impl:N",
+                scale=alt.Scale(domain=impls, range=dash_range),
+                legend=None,
+            ),
+            opacity=alt.Opacity(
+                "impl:N",
+                scale=alt.Scale(domain=impls, range=opacity_range),
+                legend=None,
+            ),
+        )
+        points = base.mark_point(size=150, opacity=1, strokeWidth=2).encode(
+            fill=alt.value("white"),
+            stroke=alt.Stroke("impl:N", legend=None),
+            opacity=alt.Opacity(
+                "impl:N",
+                scale=alt.Scale(domain=impls, range=opacity_range),
+                legend=None,
+            ),
+        )
+        return line + points
 
     # -- Plot 1: Throughput (fps) -------------------------------------------
     throughput_rows = [
@@ -36,34 +84,19 @@ def generate_charts(records: list[dict], output_dir: str) -> None:
             "tracker": r["tracker"],
             "avg_dets": r["avg_dets"],
             "fps": r["fps"],
-            "impl": r["impl"],
+            "impl": get_implementation(r["impl"]),
         }
         for r in records
+        if r["impl"] != "binary-cli"
     ]
+    # Identify which implementations are present
+    impls = [i[1] for i in IMPL_MAPPING]
+    non_python_impls = [i for i in impls if i != python_label]
 
-    # Python dashed/faded, all others solid/opaque
-    dash_domain = impls
-    dash_range = [[4, 4] if i == "python" else [0, 0] for i in impls]
-    opacity_domain = impls
-    opacity_range = [0.4 if i == "python" else 1.0 for i in impls]
-
-    base_throughput = (
-        alt.Chart(alt.Data(values=throughput_rows))
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("avg_dets:Q", title="Avg detections per frame"),
-            color=alt.Color("tracker:N", legend=alt.Legend(orient="bottom", title="Tracker")),
-            strokeDash=alt.StrokeDash(
-                "impl:N",
-                scale=alt.Scale(domain=dash_domain, range=dash_range),
-            ),
-            opacity=alt.Opacity(
-                "impl:N",
-                scale=alt.Scale(domain=opacity_domain, range=opacity_range),
-                legend=alt.Legend(orient="bottom", title="Implementation"),
-            ),
-            tooltip=["tracker:N", "impl:N", "avg_dets:Q", "fps:Q"],
-        )
+    base_throughput = build_line_points(throughput_rows, impls).encode(
+        x=alt.X("avg_dets:Q", title="Avg detections per frame"),
+        detail="tracker:N",
+        tooltip=["tracker:N", "impl:N", "avg_dets:Q", "fps:Q"],
     )
 
     throughput_left = base_throughput.encode(
@@ -96,44 +129,35 @@ def generate_charts(records: list[dict], output_dir: str) -> None:
 
     speedup_rows = []
     for r in records:
-        if r["impl"] == "python":
+        if r["impl"] == "python" or r["impl"] == "binary-cli":
             continue
         key = (r["tracker"], r["scale"], r["length"])
         py_time = python_times.get(key)
         if py_time and r["total_time"] > 0:
-            speedup_rows.append({
-                "tracker": r["tracker"],
-                "avg_dets": r["avg_dets"],
-                "impl": r["impl"],
-                "speedup": py_time / r["total_time"],
-            })
+            speedup_rows.append(
+                {
+                    "tracker": r["tracker"],
+                    "avg_dets": r["avg_dets"],
+                    "impl": get_implementation(r["impl"]),
+                    "speedup": py_time / r["total_time"],
+                }
+            )
 
     if not speedup_rows:
         print("No speedup data — skipping speedup chart.")
         return
 
-    # Distinguish impl via strokeDash
-    su_dash_domain = non_python_impls
-    su_dash_range = [[0, 0]] + [[4, 2]] * (len(non_python_impls) - 1) if len(non_python_impls) > 1 else [[0, 0]]
-
-    base_speedup = (
-        alt.Chart(alt.Data(values=speedup_rows))
-        .mark_line(point=True)
+    chart2 = (
+        build_line_points(speedup_rows, impls)
         .encode(
             x=alt.X("avg_dets:Q", title="Avg detections per frame"),
-            color=alt.Color("tracker:N", legend=alt.Legend(orient="bottom")),
-            strokeDash=alt.StrokeDash(
-                "impl:N",
-                scale=alt.Scale(domain=su_dash_domain, range=su_dash_range),
-                legend=alt.Legend(orient="bottom", title="Implementation"),
-            ),
+            y=alt.Y("speedup:Q", title="Speedup vs Python"),
+            detail="tracker:N",
             tooltip=["tracker:N", "impl:N", "avg_dets:Q", "speedup:Q"],
         )
-    )
-
-    chart2 = (
-        base_speedup.encode(y=alt.Y("speedup:Q", title="Speedup vs Python"))
-        .properties(title="Speedup over Python by implementation", width=860, height=400)
+        .properties(
+            title="Speedup over Python by implementation", width=860, height=400
+        )
     )
 
     speedup_path = os.path.join(output_dir, "speedup.png")
@@ -142,19 +166,26 @@ def generate_charts(records: list[dict], output_dir: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate benchmark charts from perf.jsonl")
+    parser = argparse.ArgumentParser(
+        description="Generate benchmark charts from perf.jsonl"
+    )
     parser.add_argument(
-        "--input", default="test-results/perf.jsonl",
+        "--input",
+        default="test-results/perf.jsonl",
         help="Path to perf.jsonl (default: test-results/perf.jsonl)",
     )
     parser.add_argument(
-        "--output-dir", default="assets",
+        "--output-dir",
+        default="assets",
         help="Output directory for charts (default: assets/)",
     )
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
-        print(f"Error: {args.input} not found. Run pytest first to generate perf data.", file=sys.stderr)
+        print(
+            f"Error: {args.input} not found. Run pytest first to generate perf data.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     records = load_records(args.input)

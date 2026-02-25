@@ -16,6 +16,6 @@ uv run pyinstaller --onefile \
     --hidden-import pyxtrackers.ocsort.kalman_filter \
     --hidden-import pyxtrackers.ocsort.association \
     --hidden-import pyxtrackers.utils.scale \
-    pyxtrackers/cli.py
+    pyxtrackers/cli_launcher.py
 
 echo "Binary built at: dist/pyxtrackers"

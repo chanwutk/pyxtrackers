@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['pyxtrackers/cli.py'],
+    ['pyxtrackers/cli_launcher.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['pyxtrackers.sort.sort', 'pyxtrackers.sort.kalman_filter',
+    hiddenimports=['pyxtrackers.cli', 'pyxtrackers.sort.sort', 'pyxtrackers.sort.kalman_filter',
                    'pyxtrackers.bytetrack.bytetrack', 'pyxtrackers.bytetrack.kalman_filter',
                    'pyxtrackers.bytetrack.matching', 'pyxtrackers.ocsort.ocsort',
                    'pyxtrackers.ocsort.kalman_filter', 'pyxtrackers.ocsort.association',

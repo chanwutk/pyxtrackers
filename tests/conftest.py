@@ -27,15 +27,26 @@ def pytest_addoption(parser):
 
 
 def pytest_collection_modifyitems(config, items):
-    if config.getoption("--visualize"):
-        return
     deselected = []
     selected = []
-    for item in items:
-        if any(f"s{s}" in item.nodeid for s in (2, 4, 6, 8, 10,)):
-            deselected.append(item)
-        else:
-            selected.append(item)
+    if config.getoption("--visualize"):
+        for item in items:
+            if "tests/test_trackers.py" not in item.nodeid:
+                selected.append(item)
+                continue
+            if "len4" in item.nodeid:
+                selected.append(item)
+            else:
+                deselected.append(item)
+    else:
+        for item in items:
+            if "tests/test_trackers.py" not in item.nodeid:
+                selected.append(item)
+                continue
+            if "s1" in item.nodeid and "len1" in item.nodeid:
+                selected.append(item)
+            else:
+                deselected.append(item)
     if deselected:
         config.hook.pytest_deselected(items=deselected)
         items[:] = selected
@@ -47,7 +58,9 @@ def pytest_sessionfinish(session, exitstatus):
     if not _PERF_RECORDS:
         return
 
-    results_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test-results")
+    results_dir = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "test-results"
+    )
     os.makedirs(results_dir, exist_ok=True)
     output_path = os.path.join(results_dir, "perf.jsonl")
 

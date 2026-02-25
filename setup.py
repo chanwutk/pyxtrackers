@@ -8,14 +8,15 @@ import platform
 import multiprocessing as mp
 
 
-MACROS: list[tuple[str, str | None]] = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+MACROS: list[tuple[str, str | None]] = [
+    ("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")
+]
 LAPJV_DIR = os.path.join("vendor", "lapjv")
 
 # Portable builds (cibuildwheel, conda-build) should not use arch-specific flags
 # that would make the binary incompatible with other CPUs.
 _IS_PORTABLE = (
-    os.environ.get("CIBUILDWHEEL") == "1"
-    or os.environ.get("CONDA_BUILD") == "1"
+    os.environ.get("CIBUILDWHEEL") == "1" or os.environ.get("CONDA_BUILD") == "1"
 )
 
 
@@ -104,6 +105,14 @@ extensions = [
         define_macros=MACROS,
         extra_compile_args=get_compile_args(),
     ),
+    # CLI
+    Extension(
+        "pyxtrackers.cli",
+        ["pyxtrackers/cli.pyx"],
+        include_dirs=[numpy.get_include()],
+        define_macros=MACROS,
+        extra_compile_args=get_compile_args(),
+    ),
     # ByteTrack
     Extension(
         "pyxtrackers.bytetrack.kalman_filter",
@@ -135,13 +144,16 @@ extensions = [
 
 # Test-only reference extension: only compile for local development, not for distribution
 if not _IS_PORTABLE:
-    extensions.insert(0, Extension(
-        "references.bytetrack.cython_bbox",
-        ["references/bytetrack/cython_bbox.pyx"],
-        include_dirs=[numpy.get_include()],
-        define_macros=MACROS,
-        extra_compile_args=get_compile_args(),
-    ))
+    extensions.insert(
+        0,
+        Extension(
+            "references.bytetrack.cython_bbox",
+            ["references/bytetrack/cython_bbox.pyx"],
+            include_dirs=[numpy.get_include()],
+            define_macros=MACROS,
+            extra_compile_args=get_compile_args(),
+        ),
+    )
 
 
 ext_modules = cythonize(

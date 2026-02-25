@@ -149,9 +149,50 @@ Tests compare Python reference implementations against Cython implementations on
 pytest                                   # All tests
 pytest tests/ -v                         # Verbose
 pytest tests/test_sort_comparison.py -v  # Single file
+pytest tests/ -v --cli-binary dist/pyxtrackers   # Include binary-CLI tests
 ```
 
+`--cli-binary` takes the path to a PyInstaller-built binary (`dist/pyxtrackers` or `dist/pyxtrackers.exe` on Windows). Without it, binary-CLI tests are skipped.
+
 Numerical comparison tolerance: 1e-6 pixels.
+
+## Design Decisions
+
+Key decisions made during development. Understand these before suggesting changes.
+
+### CLI I/O format
+
+CLI output is `x1,y1,x2,y2,id` (track ID last), matching the library's `[x1, y1, x2, y2, track_id]` numpy column order.
+
+### CLI implementation strategy
+
+The CLI is implemented in `pyxtrackers/cli.pyx` (Cython), not Python. The hot path uses native C stdio (`fgets`/`fwrite`) and C numeric parsing (`strtod`) to reduce per-frame overhead versus Python `readline()/split()/float()` loops.
+
+Behavioral requirements:
+- Keep strict fail-fast parsing semantics: malformed input raises `ValueError` and exits non-zero.
+- Preserve 1:1 input/output line correspondence (including empty input lines).
+- Preserve exact CLI schema (`x1,y1,x2,y2,score` in, `x1,y1,x2,y2,id` out).
+
+### PyInstaller entrypoint shim
+
+PyInstaller still uses a tiny Python launcher (`pyxtrackers/cli_launcher.py`) as the script entrypoint. The launcher imports and calls `pyxtrackers.cli:main` from the compiled Cython module.
+
+Rationale: keep standalone binary builds stable across platforms while still running the compiled CLI at runtime.
+
+### PyPI publish downloads only wheels and sdist
+
+The `publish-pypi` job uses two separate `actions/download-artifact` steps (one for `sdist`, one with `pattern: wheels-*`) to exclude PyInstaller binary artifacts (`binary-*`). Downloading all artifacts causes twine to choke on the binary files. The `publish-github` job correctly downloads everything for the GitHub Release.
+
+### numpy version markers
+
+`numpy>=2.0` was lowered because the codebase uses only stable C API patterns available since numpy 1.19. The actual floor is set by Python version because numpy 1.x does not support Python 3.13:
+- Python 3.10–3.11: `numpy>=1.22`
+- Python 3.12: `numpy>=1.26`
+- Python 3.13+: `numpy>=2.1`
+
+`NPY_NO_DEPRECATED_API` is set to `NPY_1_7_API_VERSION` (not `NPY_2_3_API_VERSION`) so the code builds with any numpy >= 1.22. This macro hides deprecated C API symbols for forward-compatibility; it is a build-time hygiene measure, not a runtime version check.
+
+**Note:** If you change numpy versions in an existing venv, reinstall scipy via `pip install --force-reinstall scipy` — its compiled extensions must match the numpy ABI.
 
 ## Architecture
 
@@ -166,6 +207,8 @@ Numerical comparison tolerance: 1e-6 pixels.
 ```
 pyxtrackers/
 ├── __init__.py              # Re-exports Sort, BYTETracker, OCSort
+├── cli.pyx                  # Cython stdin/stdout CLI
+├── cli_launcher.py          # Python launcher for PyInstaller entrypoint
 ├── sort/
 │   ├── __init__.py          # Re-exports Sort
 │   ├── sort.pyx             # Main SORT tracker

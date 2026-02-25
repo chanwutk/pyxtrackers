@@ -26,7 +26,7 @@ TOLERANCE = 1e-6
 CLI_TOLERANCE = 1e-4  # Relaxed for :.4f text formatting
 IMG_H, IMG_W = 1080, 1920
 SCALES = [1, 2, 4, 6, 8, 10]
-LENGTHS = [4]
+LENGTHS = [1, 4]
 
 _PERF_RECORDS: list[dict] = []
 
@@ -34,6 +34,7 @@ _PERF_RECORDS: list[dict] = []
 # ============================================================
 # Shared helpers
 # ============================================================
+
 
 def load_detection_results(path: str) -> list[dict]:
     assert os.path.exists(path), f"Detection file not found: {path}"
@@ -99,10 +100,12 @@ def stack_detections(
                 tiles.append(tile)
 
         merged = np.concatenate(tiles, axis=0)
-        stacked.append({
-            "frame_idx": frame["frame_idx"],
-            "detections": merged.tolist(),
-        })
+        stacked.append(
+            {
+                "frame_idx": frame["frame_idx"],
+                "detections": merged.tolist(),
+            }
+        )
 
     return stacked
 
@@ -119,10 +122,12 @@ def repeat_detections(detection_results: list[dict], length: int) -> list[dict]:
     repeated: list[dict] = []
     for rep in range(length):
         for frame in detection_results:
-            repeated.append({
-                "frame_idx": frame["frame_idx"] + rep * n_frames,
-                "detections": frame.get("detections", frame.get("bboxes", [])),
-            })
+            repeated.append(
+                {
+                    "frame_idx": frame["frame_idx"] + rep * n_frames,
+                    "detections": frame.get("detections", frame.get("bboxes", [])),
+                }
+            )
     return repeated
 
 
@@ -163,7 +168,13 @@ def run_tracker(
             "fps": len(frame_times) / total if total > 0 else 0.0,
         }
     else:
-        perf = {"total_time": 0.0, "num_frames": 0, "avg_ms": 0.0, "median_ms": 0.0, "fps": 0.0}
+        perf = {
+            "total_time": 0.0,
+            "num_frames": 0,
+            "avg_ms": 0.0,
+            "median_ms": 0.0,
+            "fps": 0.0,
+        }
 
     return tracking_results, perf
 
@@ -171,6 +182,7 @@ def run_tracker(
 # ============================================================
 # CLI helpers
 # ============================================================
+
 
 def _format_dets_for_cli(dets: np.ndarray) -> str:
     """Format Nx5 detection array as CLI input line (x1,y1,x2,y2,score space-separated)."""
@@ -190,7 +202,12 @@ def _parse_cli_output_line(line: str) -> np.ndarray:
     tracks = []
     for token in line.split():
         parts = token.split(",")
-        x1, y1, x2, y2 = float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])
+        x1, y1, x2, y2 = (
+            float(parts[0]),
+            float(parts[1]),
+            float(parts[2]),
+            float(parts[3]),
+        )
         tid = float(parts[4])
         tracks.append([x1, y1, x2, y2, tid])
     return np.array(tracks, dtype=np.float64)
@@ -269,6 +286,7 @@ def run_cli_tracker(
 # Perf recording
 # ============================================================
 
+
 def _record_perf(
     tracker: str,
     impl: str,
@@ -278,23 +296,26 @@ def _record_perf(
     perf: dict[str, float],
 ) -> None:
     """Append a tidy perf record to _PERF_RECORDS."""
-    _PERF_RECORDS.append({
-        "tracker": tracker,
-        "impl": impl,
-        "scale": scale,
-        "length": length,
-        "avg_dets": avg_dets,
-        "total_time": perf["total_time"],
-        "num_frames": perf["num_frames"],
-        "avg_ms": perf["avg_ms"],
-        "median_ms": perf["median_ms"],
-        "fps": perf["fps"],
-    })
+    _PERF_RECORDS.append(
+        {
+            "tracker": tracker,
+            "impl": impl,
+            "scale": scale,
+            "length": length,
+            "avg_dets": avg_dets,
+            "total_time": perf["total_time"],
+            "num_frames": perf["num_frames"],
+            "avg_ms": perf["avg_ms"],
+            "median_ms": perf["median_ms"],
+            "fps": perf["fps"],
+        }
+    )
 
 
 # ============================================================
 # Comparison helpers
 # ============================================================
+
 
 def _compare_frames(a: np.ndarray, b: np.ndarray, tolerance: float) -> bool:
     if len(a) != len(b):
@@ -331,7 +352,11 @@ def assert_results_match(
                 first_diff_frame = frame_idx
 
     if perf_ref and perf_test:
-        speedup = perf_ref["total_time"] / perf_test["total_time"] if perf_test["total_time"] > 0 else 0
+        speedup = (
+            perf_ref["total_time"] / perf_test["total_time"]
+            if perf_test["total_time"] > 0
+            else 0
+        )
         print(
             f"\n{tracker_name}: {len(all_frames)} frames | "
             f"Ref {perf_ref['avg_ms']:.3f}ms/frame ({perf_ref['fps']:.0f} fps) | "
@@ -349,6 +374,7 @@ def assert_results_match(
 # ============================================================
 # Test functions
 # ============================================================
+
 
 @pytest.mark.parametrize("length", LENGTHS, ids=[f"len{l}" for l in LENGTHS])
 @pytest.mark.parametrize("scale", SCALES, ids=[f"s{s}" for s in SCALES])
@@ -369,7 +395,8 @@ def test_sort_comparison(scale: int, length: int, request):
     KalmanBoxTracker.count = 0
     results_py, perf_py = run_tracker(
         SortPython(max_age=20, min_hits=1, iou_threshold=0.1),
-        detection_results, update,
+        detection_results,
+        update,
     )
     _record_perf("SORT", "python", scale, length, avg_dets, perf_py)
 
@@ -377,28 +404,65 @@ def test_sort_comparison(scale: int, length: int, request):
     KalmanBoxTracker.count = 0
     results_cy, perf_cy = run_tracker(
         SortCython(max_age=20, min_hits=1, iou_threshold=0.1),
-        detection_results, update,
+        detection_results,
+        update,
     )
-    assert_results_match(results_py, results_cy, f"{label} [cython]",
-                         tolerance=TOLERANCE, perf_ref=perf_py, perf_test=perf_cy)
+    assert_results_match(
+        results_py,
+        results_cy,
+        f"{label} [cython]",
+        tolerance=TOLERANCE,
+        perf_ref=perf_py,
+        perf_test=perf_cy,
+    )
     _record_perf("SORT", "cython", scale, length, avg_dets, perf_cy)
 
     # 3. CLI (always runs)
-    cmd = [sys.executable, "-m", "pyxtrackers.cli",
-           "sort", "--max-age", "20", "--min-hits", "1", "--iou-threshold", "0.1"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "pyxtrackers.cli_launcher",
+        "sort",
+        "--max-age",
+        "20",
+        "--min-hits",
+        "1",
+        "--iou-threshold",
+        "0.1",
+    ]
     results_cli, perf_cli = run_cli_tracker(cmd, detection_results)
-    assert_results_match(results_py, results_cli, f"{label} [cli]",
-                         tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_cli)
+    assert_results_match(
+        results_py,
+        results_cli,
+        f"{label} [cli]",
+        tolerance=CLI_TOLERANCE,
+        perf_ref=perf_py,
+        perf_test=perf_cli,
+    )
     _record_perf("SORT", "cli", scale, length, avg_dets, perf_cli)
 
     # 4. Binary CLI (only if --cli-binary provided)
     binary_path = request.config.getoption("--cli-binary")
     if binary_path:
-        cmd = [binary_path,
-               "sort", "--max-age", "20", "--min-hits", "1", "--iou-threshold", "0.1"]
+        cmd = [
+            binary_path,
+            "sort",
+            "--max-age",
+            "20",
+            "--min-hits",
+            "1",
+            "--iou-threshold",
+            "0.1",
+        ]
         results_bin, perf_bin = run_cli_tracker(cmd, detection_results)
-        assert_results_match(results_py, results_bin, f"{label} [binary-cli]",
-                             tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_bin)
+        assert_results_match(
+            results_py,
+            results_bin,
+            f"{label} [binary-cli]",
+            tolerance=CLI_TOLERANCE,
+            perf_ref=perf_py,
+            perf_test=perf_bin,
+        )
         _record_perf("SORT", "binary-cli", scale, length, avg_dets, perf_bin)
 
 
@@ -428,7 +492,8 @@ def test_ocsort_comparison(scale: int, length: int, request):
     KalmanBoxTracker.count = 0
     results_py, perf_py = run_tracker(
         OCSortPython(det_thresh=0.3),
-        detection_results, update_python,
+        detection_results,
+        update_python,
     )
     _record_perf("OC-SORT", "python", scale, length, avg_dets, perf_py)
 
@@ -436,17 +501,37 @@ def test_ocsort_comparison(scale: int, length: int, request):
     KalmanBoxTracker.count = 0
     results_cy, perf_cy = run_tracker(
         OCSortCython(det_thresh=0.3),
-        detection_results, update_cython,
+        detection_results,
+        update_cython,
     )
-    assert_results_match(results_py, results_cy, f"{label} [cython]",
-                         tolerance=TOLERANCE, perf_ref=perf_py, perf_test=perf_cy)
+    assert_results_match(
+        results_py,
+        results_cy,
+        f"{label} [cython]",
+        tolerance=TOLERANCE,
+        perf_ref=perf_py,
+        perf_test=perf_cy,
+    )
     _record_perf("OC-SORT", "cython", scale, length, avg_dets, perf_cy)
 
     # 3. CLI (always runs)
-    cmd = [sys.executable, "-m", "pyxtrackers.cli", "ocsort", "--det-thresh", "0.3"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "pyxtrackers.cli_launcher",
+        "ocsort",
+        "--det-thresh",
+        "0.3",
+    ]
     results_cli, perf_cli = run_cli_tracker(cmd, detection_results)
-    assert_results_match(results_py, results_cli, f"{label} [cli]",
-                         tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_cli)
+    assert_results_match(
+        results_py,
+        results_cli,
+        f"{label} [cli]",
+        tolerance=CLI_TOLERANCE,
+        perf_ref=perf_py,
+        perf_test=perf_cli,
+    )
     _record_perf("OC-SORT", "cli", scale, length, avg_dets, perf_cli)
 
     # 4. Binary CLI (only if --cli-binary provided)
@@ -454,8 +539,14 @@ def test_ocsort_comparison(scale: int, length: int, request):
     if binary_path:
         cmd = [binary_path, "ocsort", "--det-thresh", "0.3"]
         results_bin, perf_bin = run_cli_tracker(cmd, detection_results)
-        assert_results_match(results_py, results_bin, f"{label} [binary-cli]",
-                             tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_bin)
+        assert_results_match(
+            results_py,
+            results_bin,
+            f"{label} [binary-cli]",
+            tolerance=CLI_TOLERANCE,
+            perf_ref=perf_py,
+            perf_test=perf_bin,
+        )
         _record_perf("OC-SORT", "binary-cli", scale, length, avg_dets, perf_bin)
 
 
@@ -482,7 +573,10 @@ def test_bytetrack_comparison(scale: int, length: int, request):
             return tracked_objs
         if len(tracked_objs) > 0:
             return np.array(
-                [[t.tlbr[0], t.tlbr[1], t.tlbr[2], t.tlbr[3], t.track_id] for t in tracked_objs],
+                [
+                    [t.tlbr[0], t.tlbr[1], t.tlbr[2], t.tlbr[3], t.track_id]
+                    for t in tracked_objs
+                ],
                 dtype=np.float64,
             )
         return np.empty((0, 5), dtype=np.float64)
@@ -499,34 +593,75 @@ def test_bytetrack_comparison(scale: int, length: int, request):
     # 1. Python reference
     BaseTrack._count = 0
     results_py, perf_py = run_tracker(
-        BYTETrackerPython(Args()), detection_results, update_python,
+        BYTETrackerPython(Args()),
+        detection_results,
+        update_python,
     )
     _record_perf("ByteTrack", "python", scale, length, avg_dets, perf_py)
 
     # 2. Cython direct
     BaseTrack._count = 0
     results_cy, perf_cy = run_tracker(
-        BYTETrackerCython(track_thresh=0.5, match_thresh=0.8, track_buffer=30, mot20=False),
-        detection_results, update_cython,
+        BYTETrackerCython(
+            track_thresh=0.5, match_thresh=0.8, track_buffer=30, mot20=False
+        ),
+        detection_results,
+        update_cython,
     )
-    assert_results_match(results_py, results_cy, f"{label} [cython]",
-                         tolerance=TOLERANCE, perf_ref=perf_py, perf_test=perf_cy)
+    assert_results_match(
+        results_py,
+        results_cy,
+        f"{label} [cython]",
+        tolerance=TOLERANCE,
+        perf_ref=perf_py,
+        perf_test=perf_cy,
+    )
     _record_perf("ByteTrack", "cython", scale, length, avg_dets, perf_cy)
 
     # 3. CLI (always runs)
-    cmd = [sys.executable, "-m", "pyxtrackers.cli",
-           "bytetrack", "--track-thresh", "0.5", "--match-thresh", "0.8", "--track-buffer", "30"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "pyxtrackers.cli_launcher",
+        "bytetrack",
+        "--track-thresh",
+        "0.5",
+        "--match-thresh",
+        "0.8",
+        "--track-buffer",
+        "30",
+    ]
     results_cli, perf_cli = run_cli_tracker(cmd, detection_results)
-    assert_results_match(results_py, results_cli, f"{label} [cli]",
-                         tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_cli)
+    assert_results_match(
+        results_py,
+        results_cli,
+        f"{label} [cli]",
+        tolerance=CLI_TOLERANCE,
+        perf_ref=perf_py,
+        perf_test=perf_cli,
+    )
     _record_perf("ByteTrack", "cli", scale, length, avg_dets, perf_cli)
 
     # 4. Binary CLI (only if --cli-binary provided)
     binary_path = request.config.getoption("--cli-binary")
     if binary_path:
-        cmd = [binary_path,
-               "bytetrack", "--track-thresh", "0.5", "--match-thresh", "0.8", "--track-buffer", "30"]
+        cmd = [
+            binary_path,
+            "bytetrack",
+            "--track-thresh",
+            "0.5",
+            "--match-thresh",
+            "0.8",
+            "--track-buffer",
+            "30",
+        ]
         results_bin, perf_bin = run_cli_tracker(cmd, detection_results)
-        assert_results_match(results_py, results_bin, f"{label} [binary-cli]",
-                             tolerance=CLI_TOLERANCE, perf_ref=perf_py, perf_test=perf_bin)
+        assert_results_match(
+            results_py,
+            results_bin,
+            f"{label} [binary-cli]",
+            tolerance=CLI_TOLERANCE,
+            perf_ref=perf_py,
+            perf_test=perf_bin,
+        )
         _record_perf("ByteTrack", "binary-cli", scale, length, avg_dets, perf_bin)

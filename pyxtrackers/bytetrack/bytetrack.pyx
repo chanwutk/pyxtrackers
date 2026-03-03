@@ -964,7 +964,7 @@ cdef class BYTETracker:
         self._tracked_stracks = out_tracked
         self._lost_stracks = out_lost
 
-        # Ref: references/bytetrack/byte_tracker.py#L285-L286 — output_stracks = [t for t in tracked_stracks if t.is_activated]
+        # Ref: references/bytetrack/byte_tracker.py#L285 — output_stracks = [t for t in tracked_stracks if t.is_activated]
         # ---- Build output ----
         cdef int n_output = 0
         cdef double out_tlbr[4]

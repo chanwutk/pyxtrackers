@@ -69,7 +69,7 @@ cdef void mat_sub(double *A, double *B, double *C, int size) noexcept nogil:
 @cython.nonecheck(False)  # type: ignore
 cdef void mat_eye(double *A, int n) noexcept nogil:
     """Set A to identity matrix of size n x n"""
-    # Ref: replaces np.eye(n) in references/sort/kalman_filter.py#L3
+    # Ref: replaces eye() calls in references/sort/kalman_filter.py (imported at L3, used at L6, L12-L14, L16)
     memset(A, 0, n * n * sizeof(double))
     cdef int i
     for i in range(n):
@@ -80,7 +80,7 @@ cdef void mat_eye(double *A, int n) noexcept nogil:
 @cython.nonecheck(False)  # type: ignore
 cdef void mat_zeros(double *A, int size) noexcept nogil:
     """Set A to zeros"""
-    # Ref: replaces numpy.zeros() in references/sort/kalman_filter.py#L3
+    # Ref: replaces zeros() calls in references/sort/kalman_filter.py (imported at L3, used at L11, L15)
     memset(A, 0, size * sizeof(double))
 
 @cython.boundscheck(False)  # type: ignore
@@ -199,7 +199,7 @@ cdef void kf_predict(KalmanFilter *kf) noexcept nogil:
 cdef void kf_update(KalmanFilter *kf, double *z) noexcept nogil:
     # Ref: references/sort/kalman_filter.py#L35-L64 (KalmanFilter7x4.update)
     # Extended with NULL-z handling for OC-SORT: when z is NULL, sets observed=0.
-    # Ref: references/ocsort/ocsort.py#L137-L138 — self.kf.update(bbox) / self.kf.update(bbox) where bbox is None
+    # Ref: references/ocsort/ocsort.py#L136-L138 — self.kf.update(convert_bbox_to_z(bbox)) / self.kf.update(bbox) where bbox is None
 
     # Handle NULL z (no observation)
     # Ref: references/ocsort/ocsort.py#L138 — self.kf.update(bbox) with bbox=None
@@ -294,9 +294,8 @@ cdef void kf_update(KalmanFilter *kf, double *z) noexcept nogil:
 @cython.nonecheck(False)  # type: ignore
 cdef void kf_freeze(KalmanFilter *kf) noexcept nogil:
     """Save the parameters before non-observation forward"""
-    # Ref: references/ocsort/ocsort.py#L148-L149 — conceptually, the tracker freezes state
-    # before lost-state predictions. Maps to KalmanBoxTracker logic that saves x and P
-    # when the track enters the lost state, so it can be restored later for smoothing.
+    # Ref: references/ocsort/kalmanfilter.py#L383-L387 — freeze() saves state
+    # before non-observation steps so it can be restored later for smoothing.
     memcpy(kf.x_saved, kf.x, 7 * sizeof(double))
     memcpy(<double*>kf.P_saved, <double*>kf.P, 49 * sizeof(double))
     kf.has_saved = 1
@@ -310,7 +309,7 @@ cdef void kf_unfreeze(KalmanFilter *kf, double *history_obs, int history_len, in
     history_obs is a flat array of observations, each observation is 4 doubles (x, y, s, r).
     Only valid observations (non-None) are stored, with None represented as all zeros.
     """
-    # Ref: references/ocsort/ocsort.py#L110-L133 — the unfreeze + virtual trajectory
+    # Ref: references/ocsort/kalmanfilter.py#L390-L435 — the unfreeze + virtual trajectory
     # interpolation logic in KalmanBoxTracker. Finds last two valid observations,
     # linearly interpolates virtual observations between them, then runs predict/update cycles.
 
@@ -318,12 +317,12 @@ cdef void kf_unfreeze(KalmanFilter *kf, double *history_obs, int history_len, in
         return
 
     # Restore saved state
-    # Ref: references/ocsort/ocsort.py#L110-L111 — restore frozen x and P
+    # Ref: references/ocsort/kalmanfilter.py#L391-L395 — restore saved parameters before replay
     memcpy(kf.x, kf.x_saved, 7 * sizeof(double))
     memcpy(<double*>kf.P, <double*>kf.P_saved, 49 * sizeof(double))
 
     # Find last two valid observations
-    # Ref: references/ocsort/ocsort.py#L113-L120 — find index1 and index2 (last two non-None observations)
+    # Ref: references/ocsort/kalmanfilter.py#L396-L399 — find index1/index2 of last two non-None observations
     cdef int i, j
     cdef int index1 = -1
     cdef int index2 = -1
@@ -358,7 +357,7 @@ cdef void kf_unfreeze(KalmanFilter *kf, double *history_obs, int history_len, in
     cdef double x, y, w, h, s, r
     cdef double new_box[4]
 
-    # Ref: references/ocsort/ocsort.py#L122-L125 — extract box1 (index1) and box2 (index2)
+    # Ref: references/ocsort/kalmanfilter.py#L400-L407 — extract box1/box2 and convert s,r -> w,h
     # in [x, y, s, r] format, convert to [cx, cy, w, h] for interpolation
     # Extract box1 and box2
     x1 = history_obs[index1 * 4 + 0]
@@ -375,18 +374,18 @@ cdef void kf_unfreeze(KalmanFilter *kf, double *history_obs, int history_len, in
     w2 = sqrt(s2 * r2)
     h2 = s2 / w2
 
-    # Ref: references/ocsort/ocsort.py#L126 — time_gap = index2 - index1
+    # Ref: references/ocsort/kalmanfilter.py#L408 — time_gap = index2 - index1
     time_gap = index2 - index1
     if time_gap <= 0:
         return
 
-    # Ref: references/ocsort/ocsort.py#L127-L130 — compute per-step deltas for linear interpolation
+    # Ref: references/ocsort/kalmanfilter.py#L409-L412 — compute per-step deltas for interpolation
     dx = (x2 - x1) / time_gap
     dy = (y2 - y1) / time_gap
     dw = (w2 - w1) / time_gap
     dh = (h2 - h1) / time_gap
 
-    # Ref: references/ocsort/ocsort.py#L131-L133 — generate virtual trajectory and run
+    # Ref: references/ocsort/kalmanfilter.py#L413-L434 — generate virtual trajectory and run
     # predict/update cycles for each interpolated observation
     # Generate virtual trajectory
     for i in range(time_gap):

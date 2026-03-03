@@ -39,7 +39,7 @@ cdef void iou_batch(double *bb1, int N, double *bb2, int M, double *out) noexcep
     cdef double xx1, yy1, xx2, yy2, w, h, wh, area1, area2
     for i in range(N):
         ai = i * 4
-        # Ref: references/ocsort/association.py#L19 — area1 = (x2-x0)*(y2-y0)
+        # Ref: references/ocsort/association.py#L19 — area1 (inline in denominator: (x2-x0)*(y2-y0))
         area1 = (bb1[ai+2] - bb1[ai+0]) * (bb1[ai+3] - bb1[ai+1])
         for j in range(M):
             bj = j * 4
@@ -155,7 +155,7 @@ cdef void ciou_batch(double *bb1, int N, double *bb2, int M, double *out) noexce
             xxc1 = fmin(bb1[ai+0], bb2[bj+0]); yyc1 = fmin(bb1[ai+1], bb2[bj+1])
             xxc2 = fmax(bb1[ai+2], bb2[bj+2]); yyc2 = fmax(bb1[ai+3], bb2[bj+3])
             outer_diag = (xxc2 - xxc1) * (xxc2 - xxc1) + (yyc2 - yyc1) * (yyc2 - yyc1)
-            # Ref: references/ocsort/association.py#L135-L141 — aspect ratio consistency term (v, alpha)
+            # Ref: references/ocsort/association.py#L135-L146 — aspect ratio consistency term (v, alpha)
             w1 = bb1[ai+2] - bb1[ai+0]; h1 = bb1[ai+3] - bb1[ai+1] + 1.0
             w2 = bb2[bj+2] - bb2[bj+0]; h2 = bb2[bj+3] - bb2[bj+1] + 1.0
             # Ref: references/ocsort/association.py#L143 — arctan = arctan(w2/h2) - arctan(w1/h1)

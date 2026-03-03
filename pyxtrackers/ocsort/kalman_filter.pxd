@@ -18,25 +18,25 @@
 # ============================================================================
 
 cdef struct KalmanFilter:
-    double x[7]          # State vector [x, y, s, r, vx, vy, vs]. Ref: references/ocsort/kalmanfilter.py#L11 (self.x)
-    double P[7][7]       # Error covariance (7x7). Ref: references/ocsort/kalmanfilter.py#L12 (self.P)
-    double Q[7][7]       # Process noise covariance (7x7). Ref: references/ocsort/kalmanfilter.py#L13 (self.Q)
-    double F[7][7]       # State transition matrix (7x7). Ref: references/ocsort/kalmanfilter.py#L14 (self.F)
-    double H[4][7]       # Measurement matrix (4x7). Ref: references/ocsort/kalmanfilter.py#L15 (self.H)
-    double R[4][4]       # Measurement noise covariance (4x4). Ref: references/ocsort/kalmanfilter.py#L16 (self.R)
+    double x[7]          # State vector [x, y, s, r, vx, vy, vs]. Ref: references/ocsort/kalmanfilter.py#L295 (self.x)
+    double P[7][7]       # Error covariance (7x7). Ref: references/ocsort/kalmanfilter.py#L296 (self.P)
+    double Q[7][7]       # Process noise covariance (7x7). Ref: references/ocsort/kalmanfilter.py#L297 (self.Q)
+    double F[7][7]       # State transition matrix (7x7). Ref: references/ocsort/kalmanfilter.py#L299 (self.F)
+    double H[4][7]       # Measurement matrix (4x7). Ref: references/ocsort/kalmanfilter.py#L300 (self.H)
+    double R[4][4]       # Measurement noise covariance (4x4). Ref: references/ocsort/kalmanfilter.py#L301 (self.R)
     # --- OC-SORT specific: freeze/unfreeze state for occlusion handling ---
     double x_saved[7]    # Saved state before non-observation forward pass
     double P_saved[7][7] # Saved covariance before non-observation forward pass
     int has_saved         # 1 if state has been saved (frozen), 0 otherwise
     int observed          # 1 if last update had a real observation, 0 if None
 
-# Ref: KalmanFilterNew.__init__ (kalmanfilter.py)
+# Ref: KalmanFilterNew.__init__ (references/ocsort/kalmanfilter.py#L283-L337)
 cdef void kf_init(KalmanFilter *kf) noexcept nogil
 
-# Ref: KalmanFilterNew.predict (references/ocsort/kalmanfilter.py#L24-L32)
+# Ref: KalmanFilterNew.predict (references/ocsort/kalmanfilter.py#L339-L379)
 cdef void kf_predict(KalmanFilter *kf) noexcept nogil
 
-# Ref: KalmanFilterNew.update (references/ocsort/kalmanfilter.py#L35-L64)
+# Ref: KalmanFilterNew.update (references/ocsort/kalmanfilter.py#L437-L526)
 # Accepts NULL z to indicate no observation (sets observed=0)
 cdef void kf_update(KalmanFilter *kf, double *z) noexcept nogil
 

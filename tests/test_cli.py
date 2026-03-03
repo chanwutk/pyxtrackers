@@ -130,7 +130,7 @@ class TestFormatTracks:
         result = format_tracks(tracks)
         assert (
             result
-            == "100.0000,200.0000,300.0000,400.0000,1 150.0000,250.0000,350.0000,450.0000,2"
+            == "100.000000,200.000000,300.000000,400.000000,1 150.000000,250.000000,350.000000,450.000000,2"
         )
 
     def test_empty(self):
@@ -141,7 +141,7 @@ class TestFormatTracks:
     def test_single_track(self):
         tracks = np.array([[10.5, 20.5, 30.5, 40.5, 3.0]])
         result = format_tracks(tracks)
-        assert result == "10.5000,20.5000,30.5000,40.5000,3"
+        assert result == "10.500000,20.500000,30.500000,40.500000,3"
 
     def test_track_id_is_integer(self):
         tracks = np.array([[0, 0, 10, 10, 5.0]])

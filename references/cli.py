@@ -90,7 +90,7 @@ def format_tracks(tracks: np.ndarray) -> str:
     parts = []
     for row in tracks:
         x1, y1, x2, y2, tid = row
-        parts.append(f"{x1:.4f},{y1:.4f},{x2:.4f},{y2:.4f},{int(tid)}")
+        parts.append(f"{x1:.6f},{y1:.6f},{x2:.6f},{y2:.6f},{int(tid)}")
     return " ".join(parts)
 
 

@@ -24,7 +24,7 @@ from libcpp.vector cimport vector
 from libcpp.map cimport map as cppmap
 
 from pyxtrackers.bytetrack.kalman_filter cimport KalmanFilter, kf_init, kf_initiate, kf_predict, kf_update
-from pyxtrackers.bytetrack.matching cimport compute_iou_cost, fuse_score, linear_assignment
+from pyxtrackers.bytetrack.matching cimport iou_distance, fuse_score, linear_assignment
 
 
 # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/basetrack.py#L5-L9 (TrackState)
@@ -335,7 +335,7 @@ cdef void STrack_mark_removed(STrack *self) noexcept nogil:
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
-cdef void STrack_get_tlwh(STrack *self, double *tlwh) noexcept nogil:
+cdef void STrack_tlwh(STrack *self, double *tlwh) noexcept nogil:
     """Get current position in tlwh format.
     Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L90-L99 (STrack.tlwh property)
     """
@@ -358,12 +358,12 @@ cdef void STrack_get_tlwh(STrack *self, double *tlwh) noexcept nogil:
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
-cdef void STrack_get_tlbr(STrack *self, double *tlbr) noexcept nogil:
+cdef void STrack_tlbr(STrack *self, double *tlbr) noexcept nogil:
     """Get current position in tlbr format.
     Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L103-L109 (STrack.tlbr property)
     """
     cdef double tlwh[4]
-    STrack_get_tlwh(self, tlwh)
+    STrack_tlwh(self, tlwh)
     tlwh_to_tlbr(tlwh, tlbr)
 
 
@@ -426,13 +426,13 @@ cdef void remove_duplicate_stracks(
     cdef double *atlbrs = <double*>malloc(na * 4 * sizeof(double))
     cdef double *btlbrs = <double*>malloc(nb * 4 * sizeof(double))
     for i in range(na):
-        STrack_get_tlbr(stracksa[0][i], &atlbrs[i * 4])
+        STrack_tlbr(stracksa[0][i], &atlbrs[i * 4])
     for i in range(nb):
-        STrack_get_tlbr(stracksb[0][i], &btlbrs[i * 4])
+        STrack_tlbr(stracksb[0][i], &btlbrs[i * 4])
 
     # Compute IOU cost matrix (1 - IOU)
     cdef double *cost = <double*>malloc(na * nb * sizeof(double))
-    compute_iou_cost(atlbrs, na, btlbrs, nb, cost)
+    iou_distance(atlbrs, na, btlbrs, nb, cost)
 
     # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L317 — pairs = np.where(pdist < 0.15)  [threshold 0.15]
     # Find duplicates (cost < 0.15 means IOU > 0.85)
@@ -669,14 +669,14 @@ cdef class BYTETracker:
             pool_tlbrs = <double*>malloc(n_pool * 4 * sizeof(double))
             det_tlbrs = <double*>malloc(n_det * 4 * sizeof(double))
             for i in range(n_pool):
-                STrack_get_tlbr(strack_pool[i], &pool_tlbrs[i * 4])
+                STrack_tlbr(strack_pool[i], &pool_tlbrs[i * 4])
             for i in range(n_det):
-                STrack_get_tlbr(detections[i], &det_tlbrs[i * 4])
+                STrack_tlbr(detections[i], &det_tlbrs[i * 4])
 
             # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L205 — dists = matching.iou_distance(strack_pool, detections)
             # Compute IOU cost matrix
             cost_mat = <double*>malloc(n_pool * n_det * sizeof(double))
-            compute_iou_cost(pool_tlbrs, n_pool, det_tlbrs, n_det, cost_mat)
+            iou_distance(pool_tlbrs, n_pool, det_tlbrs, n_det, cost_mat)
 
             # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L206-L207 — if not mot20: dists = matching.fuse_score(dists, detections)
             # Fuse detection scores if not MOT20
@@ -722,7 +722,7 @@ cdef class BYTETracker:
         for i in range(n_matches):
             trk = strack_pool[match_a[i]]
             det_trk = detections[match_b[i]]
-            STrack_get_tlwh(det_trk, det_tlwh_tmp)
+            STrack_tlwh(det_trk, det_tlwh_tmp)
             if trk.state == TrackState.Tracked:
                 # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L213-L215 — track.update(det, frame_id); activated_starcks.append(track)
                 # Update matched tracked track
@@ -771,14 +771,14 @@ cdef class BYTETracker:
             pool_tlbrs = <double*>malloc(n_rtracked * 4 * sizeof(double))
             det_tlbrs = <double*>malloc(n_det2 * 4 * sizeof(double))
             for i in range(n_rtracked):
-                STrack_get_tlbr(r_tracked[i], &pool_tlbrs[i * 4])
+                STrack_tlbr(r_tracked[i], &pool_tlbrs[i * 4])
             for i in range(n_det2):
-                STrack_get_tlbr(detections_second[i], &det_tlbrs[i * 4])
+                STrack_tlbr(detections_second[i], &det_tlbrs[i * 4])
 
             # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L229 — dists = matching.iou_distance(r_tracked_stracks, detections_second)
             # Compute cost and solve assignment
             cost_mat = <double*>malloc(n_rtracked * n_det2 * sizeof(double))
-            compute_iou_cost(pool_tlbrs, n_rtracked, det_tlbrs, n_det2, cost_mat)
+            iou_distance(pool_tlbrs, n_rtracked, det_tlbrs, n_det2, cost_mat)
 
             # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L230 — matches, u_track, u_detection_second = matching.linear_assignment(dists, thresh=0.5)
             min_dim = n_rtracked if n_rtracked < n_det2 else n_det2
@@ -808,7 +808,7 @@ cdef class BYTETracker:
         for i in range(n_matches2):
             trk = r_tracked[match_a2[i]]
             det_trk = detections_second[match_b2[i]]
-            STrack_get_tlwh(det_trk, det_tlwh_tmp)
+            STrack_tlwh(det_trk, det_tlwh_tmp)
             if trk.state == TrackState.Tracked:
                 STrack_update(trk, det_tlwh_tmp, det_trk.score, self._frame_id)
                 activated_starcks.push_back(trk)
@@ -852,14 +852,14 @@ cdef class BYTETracker:
             pool_tlbrs = <double*>malloc(n_unconf * 4 * sizeof(double))
             det_tlbrs = <double*>malloc(n_remaining * 4 * sizeof(double))
             for i in range(n_unconf):
-                STrack_get_tlbr(unconfirmed[i], &pool_tlbrs[i * 4])
+                STrack_tlbr(unconfirmed[i], &pool_tlbrs[i * 4])
             for i in range(n_remaining):
-                STrack_get_tlbr(remaining_dets[i], &det_tlbrs[i * 4])
+                STrack_tlbr(remaining_dets[i], &det_tlbrs[i * 4])
 
             # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L249 — dists = matching.iou_distance(unconfirmed, detections)
             # Compute cost, fuse scores, solve assignment
             cost_mat = <double*>malloc(n_unconf * n_remaining * sizeof(double))
-            compute_iou_cost(pool_tlbrs, n_unconf, det_tlbrs, n_remaining, cost_mat)
+            iou_distance(pool_tlbrs, n_unconf, det_tlbrs, n_remaining, cost_mat)
 
             # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/byte_tracker.py#L250-L251 — if not mot20: dists = matching.fuse_score(dists, detections)
             if self._mot20 == 0:
@@ -897,7 +897,7 @@ cdef class BYTETracker:
         for i in range(n_matches3):
             trk = unconfirmed[match_a3[i]]
             det_trk = remaining_dets[match_b3[i]]
-            STrack_get_tlwh(det_trk, det_tlwh_tmp)
+            STrack_tlwh(det_trk, det_tlwh_tmp)
             STrack_update(trk, det_tlwh_tmp, det_trk.score, self._frame_id)
             activated_starcks.push_back(trk)
 
@@ -987,7 +987,7 @@ cdef class BYTETracker:
         for i in range(<int>self._tracked_stracks.size()):
             trk = self._tracked_stracks[i]
             if trk.is_activated != 0:
-                STrack_get_tlbr(trk, out_tlbr)
+                STrack_tlbr(trk, out_tlbr)
                 output[n_output * 5 + 0] = out_tlbr[0]
                 output[n_output * 5 + 1] = out_tlbr[1]
                 output[n_output * 5 + 2] = out_tlbr[2]
@@ -1123,13 +1123,13 @@ cdef class STrackView:
     @property
     def tlwh(self):
         cdef double tlwh[4]
-        STrack_get_tlwh(self._ptr, tlwh)
+        STrack_tlwh(self._ptr, tlwh)
         return np.array([tlwh[0], tlwh[1], tlwh[2], tlwh[3]])
 
     @property
     def tlbr(self):
         cdef double tlbr[4]
-        STrack_get_tlbr(self._ptr, tlbr)
+        STrack_tlbr(self._ptr, tlbr)
         return np.array([tlbr[0], tlbr[1], tlbr[2], tlbr[3]])
 
     @property

@@ -64,7 +64,7 @@ cdef void convert_x_to_bbox(double *x, double *bbox) noexcept nogil:
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
-cdef void speed_direction_internal(double *bbox1, double *bbox2, double *speed) noexcept nogil:
+cdef void speed_direction(double *bbox1, double *bbox2, double *speed) noexcept nogil:
     """Compute speed direction between two bounding boxes.
     Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/ocsort.py#L49-L54 (speed_direction)
     """
@@ -255,14 +255,14 @@ cdef void KalmanBoxTracker_update(KalmanBoxTracker *self, double *bbox) noexcept
                             # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/ocsort.py#L115-L116 — previous_box = self.observations[self.age-dt]
                             # Found valid observation, convert from stored bbox to speed dir
                             # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/ocsort.py#L122 — self.velocity = speed_direction(previous_box, bbox)
-                            speed_direction_internal(&self.observations[obs_idx], bbox, self.velocity)
+                            speed_direction(&self.observations[obs_idx], bbox, self.velocity)
                             self.has_velocity = 1
                             found = 1
                             break
             if not found:
                 # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/ocsort.py#L117-L118 — if previous_box is None: previous_box = self.last_observation
                 # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/ocsort.py#L122 — self.velocity = speed_direction(previous_box, bbox)
-                speed_direction_internal(self.last_observation, bbox, self.velocity)
+                speed_direction(self.last_observation, bbox, self.velocity)
                 self.has_velocity = 1
 
         # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/ocsort.py#L128-L130 — store observation and update last_observation

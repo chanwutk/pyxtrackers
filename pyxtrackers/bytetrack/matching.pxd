@@ -11,7 +11,7 @@
 # Uses PASCAL VOC formula (+1 to dimensions) matching the reference's
 # cython_bbox.bbox_overlaps implementation.
 # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L52-L69 (ious) + L72-90 (iou_distance)
-cdef void compute_iou_cost(
+cdef void iou_distance(
     double *atlbrs, int N,
     double *btlbrs, int M,
     double *cost_out

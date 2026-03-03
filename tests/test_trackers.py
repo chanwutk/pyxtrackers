@@ -22,11 +22,16 @@ import pytest
 
 
 DETECTION_PATH = os.path.join(os.path.dirname(__file__), "data", "detection.jsonl")
-TOLERANCE = 1e-6
-CLI_TOLERANCE = 1e-4  # Relaxed for :.4f text formatting
+CLI_TOLERANCE = 1e-6  # Relaxed for :.4f text formatting
 IMG_H, IMG_W = 1080, 1920
 SCALES = [1, 2, 4, 6, 8, 10]
 LENGTHS = [1, 4]
+
+TRACKER_TOLERANCE = {
+    "SORT": None,
+    "OC-SORT": None,
+    "ByteTrack": 1e-6,
+}
 
 _PERF_RECORDS: list[dict] = []
 
@@ -317,7 +322,7 @@ def _record_perf(
 # ============================================================
 
 
-def _compare_frames(a: np.ndarray, b: np.ndarray, tolerance: float) -> bool:
+def _compare_frames(a: np.ndarray, b: np.ndarray, tolerance: float | None) -> bool:
     if len(a) != len(b):
         return False
     if len(a) == 0:
@@ -327,14 +332,16 @@ def _compare_frames(a: np.ndarray, b: np.ndarray, tolerance: float) -> bool:
     b = b[b[:, 4].argsort()]
     if not np.array_equal(a[:, 4], b[:, 4]):
         return False
-    return bool(np.allclose(a[:, :4], b[:, :4], atol=tolerance))
+    if tolerance is None:
+        return bool(np.array_equal(a[:, :4], b[:, :4]))
+    return bool(np.allclose(a[:, :4], b[:, :4], atol=tolerance, rtol=0))
 
 
 def assert_results_match(
     results_ref: dict[int, npt.NDArray[np.floating]],
     results_test: dict[int, npt.NDArray[np.floating]],
     tracker_name: str,
-    tolerance: float = TOLERANCE,
+    tolerance: float | None,
     perf_ref: dict[str, float] | None = None,
     perf_test: dict[str, float] | None = None,
 ) -> None:
@@ -411,7 +418,7 @@ def test_sort_comparison(scale: int, length: int, request):
         results_py,
         results_cy,
         f"{label} [cython]",
-        tolerance=TOLERANCE,
+        tolerance=TRACKER_TOLERANCE["SORT"],
         perf_ref=perf_py,
         perf_test=perf_cy,
     )
@@ -508,7 +515,7 @@ def test_ocsort_comparison(scale: int, length: int, request):
         results_py,
         results_cy,
         f"{label} [cython]",
-        tolerance=TOLERANCE,
+        tolerance=TRACKER_TOLERANCE["OC-SORT"],
         perf_ref=perf_py,
         perf_test=perf_cy,
     )
@@ -612,7 +619,7 @@ def test_bytetrack_comparison(scale: int, length: int, request):
         results_py,
         results_cy,
         f"{label} [cython]",
-        tolerance=TOLERANCE,
+        tolerance=TRACKER_TOLERANCE["ByteTrack"],
         perf_ref=perf_py,
         perf_test=perf_cy,
     )

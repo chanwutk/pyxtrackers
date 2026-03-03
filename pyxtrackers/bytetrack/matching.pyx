@@ -7,7 +7,7 @@
 """
 Cython matching functions for ByteTrack.
 
-Only the C-level APIs are the public surface for BYTETracker: compute_iou_cost,
+Only the C-level APIs are the public surface for BYTETracker: iou_distance,
 fuse_score, lapjv_solve, linear_assignment. Used by bytetrack.pyx via cimport.
 """
 
@@ -31,7 +31,7 @@ cdef extern from "lapjv.h" nogil:
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
-cdef void compute_iou_cost(
+cdef void iou_distance(
     double *atlbrs, int N,
     double *btlbrs, int M,
     double *cost_out
@@ -42,7 +42,7 @@ cdef void compute_iou_cost(
     atlbrs: flat array of N bounding boxes, each [x1, y1, x2, y2] (N*4 total)
     btlbrs: flat array of M bounding boxes, each [x1, y1, x2, y2] (M*4 total)
     cost_out: flat output array of size N*M, filled with (1 - IOU)
-    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L52-L69 (ious helper using cython_bbox.bbox_overlaps)
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L72-L90 (iou_distance; uses ious/bbox_overlaps)
     """
     cdef int i, j
     cdef double xx1, yy1, xx2, yy2, w, h, wh, area1, area2

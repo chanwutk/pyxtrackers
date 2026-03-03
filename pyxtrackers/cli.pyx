@@ -327,7 +327,7 @@ def format_tracks(cnp.ndarray[float64_t, ndim=2] tracks):
     """Format tracked output as ``x1,y1,x2,y2,id ...`` (Python-level).
 
     Output schema: space-separated tokens, each "x1,y1,x2,y2,id" where
-    coordinates are 4-decimal floats and id is an integer. This matches the
+    coordinates are 6-decimal floats and id is an integer. This matches the
     CLI output contract where track_id is the last field (matching the Nx5
     numpy column order [x1, y1, x2, y2, track_id] returned by all three
     tracker update() methods).
@@ -345,9 +345,9 @@ def format_tracks(cnp.ndarray[float64_t, ndim=2] tracks):
 
     parts = []
     for i in range(n):
-        # Format: x1,y1,x2,y2,id -- coordinates as 4-decimal floats, id as int.
+        # Format: x1,y1,x2,y2,id -- coordinates as 6-decimal floats, id as int.
         parts.append(
-            f"{tracks[i, 0]:.4f},{tracks[i, 1]:.4f},{tracks[i, 2]:.4f},{tracks[i, 3]:.4f},{int(tracks[i, 4])}"
+            f"{tracks[i, 0]:.6f},{tracks[i, 1]:.6f},{tracks[i, 2]:.6f},{tracks[i, 3]:.6f},{int(tracks[i, 4])}"
         )
     return " ".join(parts)
 
@@ -360,8 +360,8 @@ cdef void _write_tracks_stdout(cnp.ndarray[float64_t, ndim=2] tracks) except *:
     space-separates them, appends a newline, and writes the entire frame in one
     fwrite call followed by fflush for immediate pipe delivery.
 
-    Uses malloc'd buffer with 96 bytes per row (enough for 4 floats with
-    %.4f precision + 1 integer + commas + space separator).
+    Uses malloc'd buffer with 128 bytes per row (enough for 4 floats with
+    %.6f precision + 1 integer + commas + space separator).
 
     Preserves the 1:1 input/output line correspondence contract: even zero-track
     frames emit a newline.
@@ -370,7 +370,7 @@ cdef void _write_tracks_stdout(cnp.ndarray[float64_t, ndim=2] tracks) except *:
     cdef Py_ssize_t n = tracks.shape[0]
     cdef Py_ssize_t i
     cdef int written
-    # 96 bytes per row is generous for "%.4f,%.4f,%.4f,%.4f,%d" format.
+    # 128 bytes per row is generous for "%.6f,%.6f,%.6f,%.6f,%d" format.
     cdef Py_ssize_t row_capacity
     cdef Py_ssize_t max_bytes
     cdef char* out_buf
@@ -384,9 +384,9 @@ cdef void _write_tracks_stdout(cnp.ndarray[float64_t, ndim=2] tracks) except *:
         fflush(stdout)
         return
 
-    # Allocate output buffer: 96 bytes per track + 1 byte for space separator
+    # Allocate output buffer: 128 bytes per track + 1 byte for space separator
     # per track, + 1 byte for trailing newline.
-    row_capacity = 96
+    row_capacity = 128
     max_bytes = (row_capacity + 1) * n + 1
     out_buf = <char*>malloc(<size_t>max_bytes)
     if out_buf == NULL:
@@ -396,12 +396,12 @@ cdef void _write_tracks_stdout(cnp.ndarray[float64_t, ndim=2] tracks) except *:
         out_ptr = out_buf
         view = tracks
         for i in range(n):
-            # snprintf formats one track: "x1,y1,x2,y2,id" with %.4f precision
+            # snprintf formats one track: "x1,y1,x2,y2,id" with %.6f precision
             # for coordinates and %d for the integer track ID.
             written = snprintf(
                 out_ptr,
                 <size_t>(row_capacity),
-                b"%.4f,%.4f,%.4f,%.4f,%d",
+                b"%.6f,%.6f,%.6f,%.6f,%d",
                 view[i, 0],
                 view[i, 1],
                 view[i, 2],

@@ -4,6 +4,11 @@ High-performance Cython implementations of state-of-the-art multi-object trackin
 
 PyxTrackers provides drop-in replacements for three widely used MOT trackers, reimplemented in Cython for significant speedups while maintaining numerical equivalence with the original Python implementations.
 
+> **Disclaimer**
+> The Cython implementations are intended to provide the same tracking behavior as the original Python implementations.
+> For SORT and OC-SORT, tests confirm the floating-point outputs are bit-wise identical to the original Python implementations.
+> For ByteTrack, tests confirm the bounding boxes are within `1e-6` floating-point absolute precision error to the original Python implementations.
+
 ## Supported Trackers
 
 | Tracker | Our Speedup (# objects < 80) | Description | Paper | GitHub |

@@ -41,7 +41,7 @@ np.random.seed(0)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
-cdef void lapjv_solve(
+cdef void linear_assignment(
     double *cost_matrix, int n_rows, int n_cols,
     int *raw_match_a, int *raw_match_b, int *n_raw_matches
 ) noexcept nogil:
@@ -308,7 +308,7 @@ cdef void KalmanBoxTracker_get_state(KalmanBoxTracker *self, double *bbox) noexc
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
-cdef void associate(
+cdef void associate_detections_to_trackers(
     double *det_bb, int n_dets,
     double *trk_bb, int n_trks,
     double iou_threshold,
@@ -390,7 +390,7 @@ cdef void associate(
             min_dim = n_dets if n_dets < n_trks else n_trks
             mi_a = <int *>malloc((min_dim + 1) * sizeof(int))
             mi_b = <int *>malloc((min_dim + 1) * sizeof(int))
-            lapjv_solve(neg_iou, n_dets, n_trks, mi_a, mi_b, &n_mi)
+            linear_assignment(neg_iou, n_dets, n_trks, mi_a, mi_b, &n_mi)
             free(neg_iou)
 
     free(row_sum)
@@ -547,9 +547,9 @@ cdef class Sort:
         match_b = <int *>malloc((min_dim + 1) * sizeof(int))
         unmatched_d = <int *>malloc((n_dets + 1) * sizeof(int))
 
-        associate(dets_bb, n_dets, trks, n_trks, self._iou_threshold,
-                   match_a, match_b, &n_matches,
-                   unmatched_d, &n_unmatched_d)
+        associate_detections_to_trackers(dets_bb, n_dets, trks, n_trks, self._iou_threshold,
+                                         match_a, match_b, &n_matches,
+                                         unmatched_d, &n_unmatched_d)
 
         # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/sort/sort.py#L225-L227 (update matched trackers with assigned detections)
         # Update matched trackers with assigned detections

@@ -12,18 +12,18 @@
 # observed, its state is "frozen" (saved) and later "unfrozen" (restored)
 # with online smoothing using virtual trajectory interpolation.
 #
-# Ref: references/ocsort/kalmanfilter.py (KalmanFilterNew class)
+# Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/kalmanfilter.py (KalmanFilterNew class)
 # The OC-SORT reference uses the same KalmanFilter as SORT for predict/update,
 # but the freeze/unfreeze is implemented in ocsort.py KalmanBoxTracker.
 # ============================================================================
 
 cdef struct KalmanFilter:
-    double x[7]          # State vector [x, y, s, r, vx, vy, vs]. Ref: references/ocsort/kalmanfilter.py#L295 (self.x)
-    double P[7][7]       # Error covariance (7x7). Ref: references/ocsort/kalmanfilter.py#L296 (self.P)
-    double Q[7][7]       # Process noise covariance (7x7). Ref: references/ocsort/kalmanfilter.py#L297 (self.Q)
-    double F[7][7]       # State transition matrix (7x7). Ref: references/ocsort/kalmanfilter.py#L299 (self.F)
-    double H[4][7]       # Measurement matrix (4x7). Ref: references/ocsort/kalmanfilter.py#L300 (self.H)
-    double R[4][4]       # Measurement noise covariance (4x4). Ref: references/ocsort/kalmanfilter.py#L301 (self.R)
+    double x[7]          # State vector [x, y, s, r, vx, vy, vs]. Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/kalmanfilter.py#L295 (self.x)
+    double P[7][7]       # Error covariance (7x7). Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/kalmanfilter.py#L296 (self.P)
+    double Q[7][7]       # Process noise covariance (7x7). Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/kalmanfilter.py#L297 (self.Q)
+    double F[7][7]       # State transition matrix (7x7). Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/kalmanfilter.py#L299 (self.F)
+    double H[4][7]       # Measurement matrix (4x7). Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/kalmanfilter.py#L300 (self.H)
+    double R[4][4]       # Measurement noise covariance (4x4). Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/ocsort/kalmanfilter.py#L301 (self.R)
     # --- OC-SORT specific: freeze/unfreeze state for occlusion handling ---
     double x_saved[7]    # Saved state before non-observation forward pass
     double P_saved[7][7] # Saved covariance before non-observation forward pass

@@ -10,12 +10,13 @@ Output format: x1,y1,x2,y2,id x1,y1,x2,y2,id ...
 Empty line = no detections (tracker still advances state, outputs empty line).
 EOF = exit.
 
-This file has no direct Python reference -- it is specific to pyxtrackers.
-However, it instantiates and calls the tracker classes whose reference
-implementations live in:
-  - Sort        -- Ref: references/sort/sort.py#L201-L244 (Sort.update)
-  - BYTETracker -- Ref: references/bytetrack/byte_tracker.py#L157-L287 (BYTETracker.update)
-  - OCSort      -- Ref: references/ocsort/ocsort.py#L193-L325 (OCSort.update)
+This file is a Cython-optimized implementation of references/cli.py.
+Core flow/reference anchors:
+  - Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L20-L60 (build_parser)
+  - Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L63-L84 (parse_detections)
+  - Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L86-L94 (format_tracks)
+  - Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L97-L130 (_create_tracker)
+  - Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L133-L155 (main loop)
 """
 
 import argparse
@@ -49,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     Each subcommand exposes the constructor parameters of the corresponding
     tracker class. Defaults here match the reference implementation defaults.
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L20-L60 (build_parser)
     """
     parser = argparse.ArgumentParser(
         prog="pyxtrackers",
@@ -57,39 +59,31 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="tracker", required=True)
 
     # --- SORT subcommand ---
-    # Ref: references/sort/sort.py#L190-L199 (Sort.__init__)
+    # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L27-L32 (SORT CLI args/defaults)
     sort_parser = subparsers.add_parser("sort", help="SORT tracker")
-    # Ref: sort.py#L191,L195 -- self.max_age: frames before a lost track is removed.
+    # Frames before a lost track is removed.
     sort_parser.add_argument("--max-age", type=int, default=1)
-    # Ref: sort.py#L191,L196 -- self.min_hits: minimum consecutive hits before
-    # a track is reported in output.
+    # Minimum consecutive hits before a track is reported in output.
     sort_parser.add_argument("--min-hits", type=int, default=3)
-    # Ref: sort.py#L191,L197 -- self.iou_threshold: IOU threshold for the
-    # Hungarian matching in associate_detections_to_trackers.
+    # IOU threshold used by matching.
     sort_parser.add_argument("--iou-threshold", type=float, default=0.3)
 
     # --- ByteTrack subcommand ---
-    # Ref: references/bytetrack/byte_tracker.py#L143-L155 (BYTETracker.__init__)
+    # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L33-L44 (ByteTrack CLI args/defaults)
     bt_parser = subparsers.add_parser("bytetrack", help="ByteTrack tracker")
-    # Ref: byte_tracker.py#L144,L152 -- args.track_thresh: detection confidence
-    # threshold; det_thresh is set to track_thresh + 0.1 internally.
+    # Detection confidence threshold.
     bt_parser.add_argument("--track-thresh", type=float, default=0.5)
-    # Ref: byte_tracker.py#L208 -- args.match_thresh: IOU threshold passed to
-    # matching.linear_assignment for first-round high-score association.
+    # IOU threshold used by the first-round association.
     bt_parser.add_argument("--match-thresh", type=float, default=0.8)
-    # Ref: byte_tracker.py#L153 -- args.track_buffer: used to compute
-    # buffer_size = int(frame_rate / 30.0 * track_buffer), which sets max_time_lost.
+    # Buffer length for retaining lost tracks.
     bt_parser.add_argument("--track-buffer", type=int, default=30)
-    # Ref: byte_tracker.py#L206 -- args.mot20: when False, fuse_score is applied
-    # to IOU distances for score-aware matching.
+    # MOT20 mode toggle.
     bt_parser.add_argument("--mot20", action="store_true", default=False)
-    # Ref: byte_tracker.py#L144,L153 -- frame_rate: used in buffer_size calculation
-    # to scale track_buffer relative to 30 fps.
+    # Frame rate setting used by tracker buffering logic.
     bt_parser.add_argument("--frame-rate", type=int, default=30)
-    # NOTE: img_info and img_size are commented out because the pyxtrackers CLI
-    # operates on pre-scaled detections. The reference BYTETracker.update takes
-    # img_info/img_size for rescaling (byte_tracker.py#L171-L173), but the CLI
-    # input format assumes detections are already in pixel coordinates.
+    # NOTE: references/cli.py exposes --img-info/--img-size here
+    # (references/cli.py#L40-L43), but pyxtrackers keeps them disabled.
+    # Input format here assumes detections are already in pixel coordinates.
     # bt_parser.add_argument(
     #     "--img-info",
     #     type=float,
@@ -108,34 +102,27 @@ def build_parser() -> argparse.ArgumentParser:
     # )
 
     # --- OC-SORT subcommand ---
-    # Ref: references/ocsort/ocsort.py#L175-L191 (OCSort.__init__)
+    # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L45-L58 (OC-SORT CLI args/defaults)
     oc_parser = subparsers.add_parser("ocsort", help="OC-SORT tracker")
-    # Ref: ocsort.py#L176,L186 -- self.det_thresh: detection score threshold;
-    # detections below this go to the second-round low-score association.
+    # Detection score threshold.
     oc_parser.add_argument("--det-thresh", type=float, default=0.3)
-    # Ref: ocsort.py#L176,L181 -- self.max_age: maximum frames a track survives
-    # without a matching detection before removal.
+    # Maximum frames a track survives without a matching detection.
     oc_parser.add_argument("--max-age", type=int, default=30)
-    # Ref: ocsort.py#L176,L182 -- self.min_hits: minimum consecutive hits before
-    # a track is included in the output results.
+    # Minimum consecutive hits before a track appears in output.
     oc_parser.add_argument("--min-hits", type=int, default=3)
-    # Ref: ocsort.py#L176,L183 -- self.iou_threshold: IOU threshold for the
-    # linear assignment matching and OCR re-matching stages.
+    # IOU threshold used in association steps.
     oc_parser.add_argument("--iou-threshold", type=float, default=0.3)
-    # Ref: ocsort.py#L176,L187 -- self.delta_t: number of past frames to look
-    # back for observation-centric recovery (k_previous_obs).
+    # Number of past frames used by observation-centric recovery.
     oc_parser.add_argument("--delta-t", type=int, default=3)
-    # Ref: ocsort.py#L176,L188 -- self.asso_func: association function name
-    # resolved via ASSO_FUNCS dict (iou, giou, ciou, diou, ct_dist).
+    # Association function name.
     oc_parser.add_argument("--asso-func", type=str, default="iou")
-    # Ref: ocsort.py#L176,L189 -- self.inertia: weight for velocity-based
-    # cost blending in the first-round association.
+    # Weight for velocity-based cost blending.
     oc_parser.add_argument("--inertia", type=float, default=0.2)
-    # Ref: ocsort.py#L176,L190 -- self.use_byte: enable BYTE-style second-round
-    # association with low-score detections against unmatched tracks.
+    # Enable second-round low-score association.
     oc_parser.add_argument("--use-byte", action="store_true", default=False)
-    # NOTE: img_info and img_size are commented out for the same reason as
-    # ByteTrack above -- CLI input is pre-scaled pixel coordinates.
+    # NOTE: references/cli.py exposes --img-info/--img-size here
+    # (references/cli.py#L55-L58), but pyxtrackers keeps them disabled.
+    # Same rationale as ByteTrack above -- CLI input is pre-scaled pixels.
     # oc_parser.add_argument(
     #     "--img-info",
     #     type=float,
@@ -194,8 +181,7 @@ cdef inline cnp.ndarray[float64_t, ndim=2] _empty_dets():
     All three trackers expect an Nx5 array where N can be 0 for frames with
     no detections. The shape (0, 5) matches the column layout
     [x1, y1, x2, y2, score].
-    Ref: sort.py#L201 -- dets=np.empty((0, 5)) default parameter
-    Ref: ocsort.py#L202 -- return np.empty((0, 5)) for None input
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L71-L73 (blank/whitespace line -> empty (0, 5))
     """
     return np.empty((0, 5), dtype=np.float64)
 
@@ -213,6 +199,7 @@ cdef cnp.ndarray[float64_t, ndim=2] _parse_detections_bytes(bytes line_bytes):
     which is significantly faster than Python's float() or split().
 
     Fail-fast semantics: any malformed token raises ValueError immediately.
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L63-L84 (parse_detections behavior and validation)
 
     Returns an Nx5 numpy float64 array. If the line is empty or all whitespace,
     returns _empty_dets() (shape (0, 5)).
@@ -331,6 +318,7 @@ def parse_detections(str line):
     raw byte data. This is the public API; the CLI main loop calls
     _parse_detections_bytes directly for performance (skips the encode step
     because fgets already produces raw bytes).
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L63-L84 (parse_detections)
     """
     return _parse_detections_bytes(line.encode("ascii"))
 
@@ -346,6 +334,7 @@ def format_tracks(cnp.ndarray[float64_t, ndim=2] tracks):
 
     This is the pure-Python formatting path, used by tests and Python callers.
     The CLI main loop uses _write_tracks_stdout instead for C-level I/O.
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L86-L94 (format_tracks)
     """
     cdef Py_ssize_t i
     cdef Py_ssize_t n = tracks.shape[0]
@@ -376,6 +365,7 @@ cdef void _write_tracks_stdout(cnp.ndarray[float64_t, ndim=2] tracks) except *:
 
     Preserves the 1:1 input/output line correspondence contract: even zero-track
     frames emit a newline.
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L86-L94 (same formatting/output contract)
     """
     cdef Py_ssize_t n = tracks.shape[0]
     cdef Py_ssize_t i
@@ -447,12 +437,12 @@ def _create_tracker(args: argparse.Namespace):
     Lazy-imports each tracker to avoid loading all three Cython extensions
     when only one is needed. Parameters are forwarded from CLI args to
     tracker constructors.
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L97-L130 (_create_tracker)
     """
     if args.tracker == "sort":
         from pyxtrackers.sort.sort import Sort
 
-        # Ref: references/sort/sort.py#L190-L199 (Sort.__init__)
-        # max_age -> L195, min_hits -> L196, iou_threshold -> L197
+        # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L99-L105 (SORT branch in _create_tracker)
         return Sort(
             max_age=args.max_age,
             min_hits=args.min_hits,
@@ -462,12 +452,7 @@ def _create_tracker(args: argparse.Namespace):
     if args.tracker == "bytetrack":
         from pyxtrackers.bytetrack.bytetrack import BYTETracker
 
-        # Ref: references/bytetrack/byte_tracker.py#L143-L155 (BYTETracker.__init__)
-        # track_thresh -> L152 (det_thresh = track_thresh + 0.1)
-        # match_thresh -> used at L208 (matching.linear_assignment thresh)
-        # track_buffer -> L153 (buffer_size calculation)
-        # mot20 -> L206 (fuse_score gating)
-        # frame_rate -> L144,L153 (buffer_size = frame_rate / 30 * track_buffer)
+        # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L107-L115 (ByteTrack branch in _create_tracker)
         return BYTETracker(
             track_thresh=args.track_thresh,
             match_thresh=args.match_thresh,
@@ -479,10 +464,7 @@ def _create_tracker(args: argparse.Namespace):
     if args.tracker == "ocsort":
         from pyxtrackers.ocsort.ocsort import OCSort
 
-        # Ref: references/ocsort/ocsort.py#L175-L191 (OCSort.__init__)
-        # det_thresh -> L186, max_age -> L181, min_hits -> L182,
-        # iou_threshold -> L183, delta_t -> L187, asso_func -> L188,
-        # inertia -> L189, use_byte -> L190
+        # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L117-L128 (OC-SORT branch in _create_tracker)
         return OCSort(
             det_thresh=args.det_thresh,
             max_age=args.max_age,
@@ -504,15 +486,14 @@ def main(argv: list[str] | None = None) -> None:
       1. Read one line from stdin via C fgets (one frame of detections).
       2. Parse the line into an Nx5 numpy array via _parse_detections_bytes.
       3. Call tracker.update(dets) to advance tracker state and get active tracks.
-         - Ref: sort.py#L201-L244 (Sort.update) -- predicts, associates, returns Nx5
-         - Ref: byte_tracker.py#L157-L287 (BYTETracker.update) -- two-stage association
-         - Ref: ocsort.py#L193-L325 (OCSort.update) -- OC recovery + optional BYTE
+         - Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L153-L154 (tracks = tracker.update(...))
       4. Write the Nx5 tracks array to stdout via _write_tracks_stdout.
       5. Repeat until EOF.
 
     Each tracker's update() must be called once per frame even with empty
     detections -- this advances internal state (frame counters, Kalman predict
     steps, track age management). The empty-line contract ensures this.
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L133-L155 (main)
     """
     # Use C FILE* for stdin to pair with fgets (bypasses Python's sys.stdin).
     cdef FILE* in_stream = stdin
@@ -524,14 +505,16 @@ def main(argv: list[str] | None = None) -> None:
     cdef cnp.ndarray[float64_t, ndim=2] tracks
 
     # Parse CLI arguments and instantiate the selected tracker.
+    # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L134-L136
     parser = build_parser()
     args = parser.parse_args(argv)
     tracker = _create_tracker(args)
 
     # NOTE: img_info/img_size scaling is commented out. The CLI assumes
-    # detections are pre-scaled to pixel coordinates. The reference
-    # implementations (byte_tracker.py#L171-L173, ocsort.py#L213-L215) rescale
-    # internally, but our Cython reimplementations accept pre-scaled input.
+    # detections are pre-scaled to pixel coordinates. references/cli.py wires
+    # scaling via args.img_info/img_size
+    # (references/cli.py#L138-L143, references/cli.py#L151-L152).
+    # Our Cython reimplementation accepts pre-scaled input.
     # img_info = None
     # img_size = None
     # if hasattr(args, "img_info") and args.img_info and args.img_size:
@@ -570,11 +553,7 @@ def main(argv: list[str] | None = None) -> None:
             # Call the tracker's update method. Each tracker expects an Nx5
             # float64 array with columns [x1, y1, x2, y2, score] and returns
             # an Mx5 array with columns [x1, y1, x2, y2, track_id].
-            # Ref: sort.py#L201-L244 -- Sort.update(dets)
-            # Ref: byte_tracker.py#L157-L287 -- BYTETracker.update(dets)
-            #   (pyxtrackers wrapper handles the simplified signature)
-            # Ref: ocsort.py#L193-L325 -- OCSort.update(dets)
-            #   (pyxtrackers wrapper handles the simplified signature)
+            # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/cli.py#L153-L154 (tracks = tracker.update(...), output)
             tracks = tracker.update(dets)
             # Write the tracks to stdout using C-level I/O for performance.
             _write_tracks_stdout(tracks)

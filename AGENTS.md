@@ -160,6 +160,17 @@ Numerical comparison tolerance: 1e-6 pixels.
 
 Key decisions made during development. Understand these before suggesting changes.
 
+### Cython Reference Annotation Convention
+
+All Cython implementation files (`.pyx`) must include navigation references back to the original Python implementation under `references/`.
+
+Required format:
+- A reference line must be exactly `Ref: <url>` on its own line.
+- Explanatory text may be added after the reference. For example, `Ref: <url> (Explanatory text)`. However, the explanatory text should be used rarely, unless it is crucial for understanding the reference.
+- When possible, include line anchors (for example `#L120-L145`) to point to the exact source span in `references/`.
+- If the reference line refers to the whole function, put the reference line inside the docstring, instead of a separate in-line comment.
+- The `<url>` is in the format `https://github.com/chanwutk/pyxtrackers/blob/main/<PATH_TO_FILE>#L<LINE_FROM>-L<LINE_TO>`. When reading the reference file, do not fetch the file from github. Instead, look at <PATH_TO_FILE> from line <LINE_FROM> to line <LINE_TO> locally.
+
 ### CLI I/O format
 
 CLI output is `x1,y1,x2,y2,id` (track ID last), matching the library's `[x1, y1, x2, y2, track_id]` numpy column order.

@@ -15,7 +15,7 @@ cimport cython
 from libc.math cimport fmax, fmin
 from libc.stdlib cimport malloc, calloc, free
 
-# Ref: references/bytetrack/matching.py#L42 — lap.lapjv (vendor/lapjv/lapjv.cpp replaces lap module)
+# Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L42 — lap.lapjv (vendor/lapjv/lapjv.cpp replaces lap module)
 # External C function for linear assignment problem
 cdef extern from "lapjv.h" nogil:
     ctypedef signed int int_t
@@ -27,7 +27,6 @@ cdef extern from "lapjv.h" nogil:
 # C-level cdef functions (no Python objects, nogil)
 # ============================================================
 
-# Ref: references/bytetrack/matching.py#L52-L69 (ious using cython_bbox.bbox_overlaps)
 #      + references/bytetrack/matching.py#L72-L90 (iou_distance). Computes 1-IOU cost using PASCAL VOC +1 formula.
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
@@ -43,13 +42,14 @@ cdef void compute_iou_cost(
     atlbrs: flat array of N bounding boxes, each [x1, y1, x2, y2] (N*4 total)
     btlbrs: flat array of M bounding boxes, each [x1, y1, x2, y2] (M*4 total)
     cost_out: flat output array of size N*M, filled with (1 - IOU)
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L52-L69 (ious helper using cython_bbox.bbox_overlaps)
     """
     cdef int i, j
     cdef double xx1, yy1, xx2, yy2, w, h, wh, area1, area2
     cdef int ai, bj
 
     for i in range(N):
-        # Ref: references/bytetrack/matching.py#L64-L67 — bbox_overlaps uses PASCAL VOC +1 convention (from cython_bbox)
+        # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L64-L67 — bbox_overlaps uses PASCAL VOC +1 convention (from cython_bbox)
         # Precompute area of bbox i (with +1 for PASCAL VOC formula)
         ai = i * 4
         area1 = (atlbrs[ai + 2] - atlbrs[ai + 0] + 1.0) * (atlbrs[ai + 3] - atlbrs[ai + 1] + 1.0)
@@ -71,12 +71,11 @@ cdef void compute_iou_cost(
             # Area of bbox j with +1
             area2 = (btlbrs[bj + 2] - btlbrs[bj + 0] + 1.0) * (btlbrs[bj + 3] - btlbrs[bj + 1] + 1.0)
 
-            # Ref: references/bytetrack/matching.py#L88 — cost_matrix = 1 - _ious
+            # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L88 — cost_matrix = 1 - _ious
             # Cost = 1 - IOU
             cost_out[i * M + j] = 1.0 - wh / (area1 + area2 - wh + 1e-9)
 
 
-# Ref: references/bytetrack/matching.py#L172-L180 (fuse_score)
 # Formula: cost = 1 - (1 - cost) * score = 1 - iou_sim * score
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
@@ -95,19 +94,19 @@ cdef void fuse_score(
     M: number of columns (detections)
 
     Formula: cost = 1 - (1 - cost) * score  =  1 - iou_sim * score
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L172-L180 (fuse_score)
     """
     cdef int i, j
     cdef double iou_sim
 
     for i in range(N):
         for j in range(M):
-            # Ref: references/bytetrack/matching.py#L175-L179 — iou_sim = 1-cost; fuse_sim = iou_sim * score; fuse_cost = 1 - fuse_sim
+            # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L175-L179 — iou_sim = 1-cost; fuse_sim = iou_sim * score; fuse_cost = 1 - fuse_sim
             # Convert cost to similarity, fuse with score, convert back
             iou_sim = 1.0 - cost_matrix[i * M + j]
             cost_matrix[i * M + j] = 1.0 - iou_sim * det_scores[j]
 
 
-# Ref: references/bytetrack/matching.py#L42 — lap.lapjv(cost_matrix, extend_cost=True, ...)
 # Wraps vendor/lapjv/lapjv.cpp; replaces the Python lap.lapjv call.
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
@@ -123,6 +122,7 @@ cdef void lapjv_solve(
     raw_match_a: output row indices of matches (pre-allocated, size >= min(n_rows, n_cols))
     raw_match_b: output col indices of matches (pre-allocated, size >= min(n_rows, n_cols))
     n_raw_matches: output number of raw matches (before threshold filtering)
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L42 — lap.lapjv(cost_matrix, extend_cost=True, ...)
     """
     cdef int n = n_rows if n_rows > n_cols else n_cols
     cdef int i, x_val
@@ -163,7 +163,6 @@ cdef void lapjv_solve(
     n_raw_matches[0] = count
 
 
-# Ref: references/bytetrack/matching.py#L38-L49 (linear_assignment)
 # Threshold-based filtering after LAPJV solve.
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
@@ -189,6 +188,7 @@ cdef void linear_assignment(
     n_unmatched_a: output number of unmatched rows
     unmatched_b: output unmatched col indices (pre-allocated, size >= M)
     n_unmatched_b: output number of unmatched cols
+    Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L38-L49 (linear_assignment)
     """
     cdef int i, j, ra, rb
     cdef int n_raw = 0
@@ -196,7 +196,7 @@ cdef void linear_assignment(
     cdef int ua_count = 0
     cdef int ub_count = 0
 
-    # Ref: references/bytetrack/matching.py#L39-L40 — if cost_matrix.size == 0: return empty matches, all unmatched
+    # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L39-L40 — if cost_matrix.size == 0: return empty matches, all unmatched
     # Handle empty cost matrix
     if N == 0 or M == 0:
         n_matches[0] = 0
@@ -215,11 +215,11 @@ cdef void linear_assignment(
     cdef int *raw_a = <int *> malloc(max_matches * sizeof(int))
     cdef int *raw_b = <int *> malloc(max_matches * sizeof(int))
 
-    # Ref: references/bytetrack/matching.py#L42 — cost, x, y = lap.lapjv(cost_matrix, extend_cost=True, cost_limit=thresh)
+    # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L42 — cost, x, y = lap.lapjv(cost_matrix, extend_cost=True, cost_limit=thresh)
     # Solve assignment
     lapjv_solve(cost_matrix, N, M, raw_a, raw_b, &n_raw)
 
-    # Ref: references/bytetrack/matching.py#L43-L48 — filter matches by threshold, collect unmatched
+    # Ref: https://github.com/chanwutk/pyxtrackers/blob/main/references/bytetrack/matching.py#L43-L48 — filter matches by threshold, collect unmatched
     # Track which rows/cols are matched (using bitmask arrays)
     cdef int *matched_row = <int *> calloc(N, sizeof(int))
     cdef int *matched_col = <int *> calloc(M, sizeof(int))

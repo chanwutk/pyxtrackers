@@ -16,3 +16,6 @@ test-results/
 
 # Virtual environments
 .venv/
+
+# Claude temporary files
+.claude/.nfs*

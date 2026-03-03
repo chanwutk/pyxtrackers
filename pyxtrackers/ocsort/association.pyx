@@ -33,21 +33,27 @@ cdef extern from "lapjv.h" nogil:
 @cython.nonecheck(False)  # type: ignore
 cdef void iou_batch(double *bb1, int N, double *bb2, int M, double *out) noexcept nogil:
     """Compute IOU between two sets of flat bbox arrays [x1,y1,x2,y2]."""
+    # Ref: references/ocsort/association.py#L5-L21 (iou_batch)
+    # Standard IOU (no +1 PASCAL VOC).
     cdef int i, j, ai, bj
     cdef double xx1, yy1, xx2, yy2, w, h, wh, area1, area2
     for i in range(N):
         ai = i * 4
+        # Ref: references/ocsort/association.py#L19 — area1 = (x2-x0)*(y2-y0)
         area1 = (bb1[ai+2] - bb1[ai+0]) * (bb1[ai+3] - bb1[ai+1])
         for j in range(M):
             bj = j * 4
+            # Ref: references/ocsort/association.py#L12-L15 — intersection coordinates
             xx1 = fmax(bb1[ai+0], bb2[bj+0])
             yy1 = fmax(bb1[ai+1], bb2[bj+1])
             xx2 = fmin(bb1[ai+2], bb2[bj+2])
             yy2 = fmin(bb1[ai+3], bb2[bj+3])
+            # Ref: references/ocsort/association.py#L16-L18 — w, h, wh
             w = fmax(0.0, xx2 - xx1)
             h = fmax(0.0, yy2 - yy1)
             wh = w * h
             area2 = (bb2[bj+2] - bb2[bj+0]) * (bb2[bj+3] - bb2[bj+1])
+            # Ref: references/ocsort/association.py#L19-L20 — o = wh / (area1 + area2 - wh)
             out[i * M + j] = wh / (area1 + area2 - wh + 1e-9)
 
 
@@ -56,6 +62,8 @@ cdef void iou_batch(double *bb1, int N, double *bb2, int M, double *out) noexcep
 @cython.nonecheck(False)  # type: ignore
 cdef void giou_batch(double *bb1, int N, double *bb2, int M, double *out) noexcept nogil:
     """Compute GIOU between two sets of flat bbox arrays."""
+    # Ref: references/ocsort/association.py#L24-L56 (giou_batch)
+    # GIOU = (IOU - (enclose - union)/enclose + 1) / 2
     cdef int i, j, ai, bj
     cdef double xx1, yy1, xx2, yy2, w, h, wh, area1, area2, union_val, iou_val
     cdef double xxc1, yyc1, xxc2, yyc2, area_enclose
@@ -64,15 +72,19 @@ cdef void giou_batch(double *bb1, int N, double *bb2, int M, double *out) noexce
         area1 = (bb1[ai+2] - bb1[ai+0]) * (bb1[ai+3] - bb1[ai+1])
         for j in range(M):
             bj = j * 4
+            # Ref: references/ocsort/association.py#L35-L41 — intersection
             xx1 = fmax(bb1[ai+0], bb2[bj+0]); yy1 = fmax(bb1[ai+1], bb2[bj+1])
             xx2 = fmin(bb1[ai+2], bb2[bj+2]); yy2 = fmin(bb1[ai+3], bb2[bj+3])
             w = fmax(0.0, xx2 - xx1); h = fmax(0.0, yy2 - yy1); wh = w * h
             area2 = (bb2[bj+2] - bb2[bj+0]) * (bb2[bj+3] - bb2[bj+1])
+            # Ref: references/ocsort/association.py#L42-L44 — union and iou
             union_val = area1 + area2 - wh
             iou_val = wh / (union_val + 1e-9)
+            # Ref: references/ocsort/association.py#L46-L53 — enclosing box area
             xxc1 = fmin(bb1[ai+0], bb2[bj+0]); yyc1 = fmin(bb1[ai+1], bb2[bj+1])
             xxc2 = fmax(bb1[ai+2], bb2[bj+2]); yyc2 = fmax(bb1[ai+3], bb2[bj+3])
             area_enclose = (xxc2 - xxc1) * (yyc2 - yyc1)
+            # Ref: references/ocsort/association.py#L54-L55 — giou = iou - (enclose - union)/enclose, rescaled to (0,1)
             out[i * M + j] = (iou_val - (area_enclose - union_val) / (area_enclose + 1e-9) + 1.0) / 2.0
 
 
@@ -81,6 +93,8 @@ cdef void giou_batch(double *bb1, int N, double *bb2, int M, double *out) noexce
 @cython.nonecheck(False)  # type: ignore
 cdef void diou_batch(double *bb1, int N, double *bb2, int M, double *out) noexcept nogil:
     """Compute DIOU between two sets of flat bbox arrays."""
+    # Ref: references/ocsort/association.py#L59-L96 (diou_batch)
+    # DIOU = (IOU - inner_diag/outer_diag + 1) / 2
     cdef int i, j, ai, bj
     cdef double xx1, yy1, xx2, yy2, w, h, wh, area1, area2, union_val, iou_val
     cdef double cx1, cy1, cx2, cy2, inner_diag
@@ -90,18 +104,22 @@ cdef void diou_batch(double *bb1, int N, double *bb2, int M, double *out) noexce
         area1 = (bb1[ai+2] - bb1[ai+0]) * (bb1[ai+3] - bb1[ai+1])
         for j in range(M):
             bj = j * 4
+            # Ref: references/ocsort/association.py#L71-L80 — intersection and IOU
             xx1 = fmax(bb1[ai+0], bb2[bj+0]); yy1 = fmax(bb1[ai+1], bb2[bj+1])
             xx2 = fmin(bb1[ai+2], bb2[bj+2]); yy2 = fmin(bb1[ai+3], bb2[bj+3])
             w = fmax(0.0, xx2 - xx1); h = fmax(0.0, yy2 - yy1); wh = w * h
             area2 = (bb2[bj+2] - bb2[bj+0]) * (bb2[bj+3] - bb2[bj+1])
             union_val = area1 + area2 - wh
             iou_val = wh / (union_val + 1e-9)
+            # Ref: references/ocsort/association.py#L81-L86 — center distance (inner_diag)
             cx1 = (bb1[ai+0] + bb1[ai+2]) / 2.0; cy1 = (bb1[ai+1] + bb1[ai+3]) / 2.0
             cx2 = (bb2[bj+0] + bb2[bj+2]) / 2.0; cy2 = (bb2[bj+1] + bb2[bj+3]) / 2.0
             inner_diag = (cx1 - cx2) * (cx1 - cx2) + (cy1 - cy2) * (cy1 - cy2)
+            # Ref: references/ocsort/association.py#L88-L93 — enclosing box diagonal (outer_diag)
             xxc1 = fmin(bb1[ai+0], bb2[bj+0]); yyc1 = fmin(bb1[ai+1], bb2[bj+1])
             xxc2 = fmax(bb1[ai+2], bb2[bj+2]); yyc2 = fmax(bb1[ai+3], bb2[bj+3])
             outer_diag = (xxc2 - xxc1) * (xxc2 - xxc1) + (yyc2 - yyc1) * (yyc2 - yyc1)
+            # Ref: references/ocsort/association.py#L94-L96 — diou = iou - inner/outer, rescaled to (0,1)
             out[i * M + j] = (iou_val - inner_diag / (outer_diag + 1e-9) + 1.0) / 2.0
 
 
@@ -110,6 +128,8 @@ cdef void diou_batch(double *bb1, int N, double *bb2, int M, double *out) noexce
 @cython.nonecheck(False)  # type: ignore
 cdef void ciou_batch(double *bb1, int N, double *bb2, int M, double *out) noexcept nogil:
     """Compute CIOU between two sets of flat bbox arrays."""
+    # Ref: references/ocsort/association.py#L98-L149 (ciou_batch)
+    # CIOU with aspect ratio consistency term.
     cdef int i, j, ai, bj
     cdef double xx1, yy1, xx2, yy2, w, h, wh, area1, area2, union_val, iou_val
     cdef double cx1, cy1, cx2, cy2, inner_diag
@@ -120,24 +140,33 @@ cdef void ciou_batch(double *bb1, int N, double *bb2, int M, double *out) noexce
         area1 = (bb1[ai+2] - bb1[ai+0]) * (bb1[ai+3] - bb1[ai+1])
         for j in range(M):
             bj = j * 4
+            # Ref: references/ocsort/association.py#L110-L119 — intersection and IOU
             xx1 = fmax(bb1[ai+0], bb2[bj+0]); yy1 = fmax(bb1[ai+1], bb2[bj+1])
             xx2 = fmin(bb1[ai+2], bb2[bj+2]); yy2 = fmin(bb1[ai+3], bb2[bj+3])
             w = fmax(0.0, xx2 - xx1); h = fmax(0.0, yy2 - yy1); wh = w * h
             area2 = (bb2[bj+2] - bb2[bj+0]) * (bb2[bj+3] - bb2[bj+1])
             union_val = area1 + area2 - wh
             iou_val = wh / (union_val + 1e-9)
+            # Ref: references/ocsort/association.py#L121-L126 — center distance
             cx1 = (bb1[ai+0] + bb1[ai+2]) / 2.0; cy1 = (bb1[ai+1] + bb1[ai+3]) / 2.0
             cx2 = (bb2[bj+0] + bb2[bj+2]) / 2.0; cy2 = (bb2[bj+1] + bb2[bj+3]) / 2.0
             inner_diag = (cx1 - cx2) * (cx1 - cx2) + (cy1 - cy2) * (cy1 - cy2)
+            # Ref: references/ocsort/association.py#L128-L133 — enclosing box diagonal
             xxc1 = fmin(bb1[ai+0], bb2[bj+0]); yyc1 = fmin(bb1[ai+1], bb2[bj+1])
             xxc2 = fmax(bb1[ai+2], bb2[bj+2]); yyc2 = fmax(bb1[ai+3], bb2[bj+3])
             outer_diag = (xxc2 - xxc1) * (xxc2 - xxc1) + (yyc2 - yyc1) * (yyc2 - yyc1)
+            # Ref: references/ocsort/association.py#L135-L141 — aspect ratio consistency term (v, alpha)
             w1 = bb1[ai+2] - bb1[ai+0]; h1 = bb1[ai+3] - bb1[ai+1] + 1.0
             w2 = bb2[bj+2] - bb2[bj+0]; h2 = bb2[bj+3] - bb2[bj+1] + 1.0
+            # Ref: references/ocsort/association.py#L143 — arctan = arctan(w2/h2) - arctan(w1/h1)
             arctan_val = atan(w2 / h2) - atan(w1 / h1)
+            # Ref: references/ocsort/association.py#L144 — v = (4/pi^2) * arctan^2
             v = (4.0 / (M_PI * M_PI)) * (arctan_val * arctan_val)
+            # Ref: references/ocsort/association.py#L145 — S = 1 - iou
             S = 1.0 - iou_val
+            # Ref: references/ocsort/association.py#L146 — alpha = v / (S + v)
             alpha_val = v / (S + v + 1e-9)
+            # Ref: references/ocsort/association.py#L147-L149 — ciou = iou - inner/outer - alpha*v, rescaled to (0,1)
             out[i * M + j] = (iou_val - inner_diag / (outer_diag + 1e-9) - alpha_val * v + 1.0) / 2.0
 
 
@@ -146,8 +175,11 @@ cdef void ciou_batch(double *bb1, int N, double *bb2, int M, double *out) noexce
 @cython.nonecheck(False)  # type: ignore
 cdef void ct_dist(double *bb1, int N, double *bb2, int M, double *out) noexcept nogil:
     """Compute center distance between two sets of flat bbox arrays."""
+    # Ref: references/ocsort/association.py#L152-L173 (ct_dist)
+    # Center distance, normalized to [0, max_dist].
     cdef int i, j, ai, bj
     cdef double cx1, cy1, cx2, cy2, d, max_dist
+    # Ref: references/ocsort/association.py#L162-L169 — compute center distances
     # First pass: compute distances and find max
     max_dist = 0.0
     for i in range(N):
@@ -160,6 +192,7 @@ cdef void ct_dist(double *bb1, int N, double *bb2, int M, double *out) noexcept 
             out[i * M + j] = d
             if d > max_dist:
                 max_dist = d
+    # Ref: references/ocsort/association.py#L172-L173 — normalize: ct_dist/max, then max - ct_dist
     # Second pass: normalize
     if max_dist > 1e-9:
         for i in range(N):
@@ -172,6 +205,8 @@ cdef void ct_dist(double *bb1, int N, double *bb2, int M, double *out) noexcept 
 @cython.nonecheck(False)  # type: ignore
 cdef void asso_dispatch(int func_type, double *bb1, int N, double *bb2, int M, double *out) noexcept nogil:
     """Dispatch to the correct distance metric based on enum."""
+    # Ref: references/ocsort/ocsort.py#L168-L172 (ASSO_FUNCS dict lookup)
+    # Maps integer enum to the corresponding association function.
     if func_type == 0:    # ASSO_IOU
         iou_batch(bb1, N, bb2, M, out)
     elif func_type == 1:  # ASSO_GIOU
@@ -194,6 +229,8 @@ cdef void lapjv_solve(
     int *raw_match_a, int *raw_match_b, int *n_raw_matches
 ) noexcept nogil:
     """Solve linear assignment using LAPJV on raw pointer arrays."""
+    # Ref: replaces lap.lapjv in references/ocsort/association.py#L190-L193
+    # Wraps vendor/lapjv/lapjv.cpp C++ solver.
     cdef int n = n_rows if n_rows > n_cols else n_cols
     cdef int i, x_val
 
@@ -216,6 +253,7 @@ cdef void lapjv_solve(
     free(cost_ext)
 
     # Extract valid match pairs
+    # Ref: references/ocsort/association.py#L193 — [[y[i],i] for i in x if i >= 0]
     cdef int count = 0
     for i in range(n_rows):
         x_val = x_c[i]
@@ -236,6 +274,8 @@ cdef void linear_assignment(
     int *match_a, int *match_b, int *n_matches
 ) noexcept nogil:
     """Solve linear assignment on a cost matrix. Returns raw match pairs."""
+    # Ref: references/ocsort/association.py#L189-L197 (linear_assignment)
+    # Returns raw match pairs without threshold filtering.
     if N == 0 or M == 0:
         n_matches[0] = 0
         return
@@ -274,11 +314,14 @@ cdef void associate(
     velocities: n_trks * 2 flat (dy, dx)
     previous_obs: n_trks * 5 flat (x1,y1,x2,y2,valid_flag)
     """
+    # Ref: references/ocsort/association.py#L244-L300 (associate)
+    # Full first-round association with VDC (velocity direction consistency).
     cdef int i, j, d, t
     cdef int matched_count = 0
     cdef int ud_count = 0
     cdef int ut_count = 0
 
+    # Ref: references/ocsort/association.py#L245-L246 — handle empty trackers
     # Handle empty trackers case
     if n_trks == 0:
         n_matches[0] = 0
@@ -289,6 +332,8 @@ cdef void associate(
         return
 
     # ---- Compute speed direction batch: dets vs previous_obs ----
+    # Ref: references/ocsort/association.py#L248 — Y, X = speed_direction_batch(detections, previous_obs)
+    # Ref: references/ocsort/association.py#L177-L186 (speed_direction_batch)
     # Y[t * n_dets + d] = dy, X[t * n_dets + d] = dx   (track x det)
     cdef double *Y = <double *>malloc(n_trks * n_dets * sizeof(double))
     cdef double *X = <double *>malloc(n_trks * n_dets * sizeof(double))
@@ -297,40 +342,52 @@ cdef void associate(
 
     for t in range(n_trks):
         ti = t * 5
+        # Ref: references/ocsort/association.py#L180 — CX2, CY2 = center of tracks
         tcx = (previous_obs[ti + 0] + previous_obs[ti + 2]) / 2.0
         tcy = (previous_obs[ti + 1] + previous_obs[ti + 3]) / 2.0
         for d in range(n_dets):
             di = d * 5
+            # Ref: references/ocsort/association.py#L179 — CX1, CY1 = center of dets
             dcx = (dets[di + 0] + dets[di + 2]) / 2.0
             dcy = (dets[di + 1] + dets[di + 3]) / 2.0
             ddx = dcx - tcx
             ddy = dcy - tcy
+            # Ref: references/ocsort/association.py#L183 — norm = sqrt(dx**2 + dy**2) + 1e-6
             norm_val = sqrt(ddx * ddx + ddy * ddy) + 1e-6
+            # Ref: references/ocsort/association.py#L184-L186 — dy/norm, dx/norm
             # Y = dy direction, X = dx direction (track x det layout)
             Y[t * n_dets + d] = ddy / norm_val
             X[t * n_dets + d] = ddx / norm_val
 
     # ---- Compute angle diff cost ----
+    # Ref: references/ocsort/association.py#L249-L267
+    # Computes velocity direction consistency cost between inertia vectors and speed directions.
     cdef double *angle_diff_cost = <double *>calloc(n_dets * n_trks, sizeof(double))
     cdef double inertia_y, inertia_x, diff_cos, diff_angle, valid, score_val
 
     for t in range(n_trks):
+        # Ref: references/ocsort/association.py#L249 — inertia_Y, inertia_X = velocities[:,0], velocities[:,1]
         inertia_y = velocities[t * 2 + 0]
         inertia_x = velocities[t * 2 + 1]
+        # Ref: references/ocsort/association.py#L257-L258 — valid_mask based on previous_obs[:,4]
         # Check if previous obs is valid (5th element >= 0)
         valid = 1.0
         if previous_obs[t * 5 + 4] < 0:
             valid = 0.0
         for d in range(n_dets):
+            # Ref: references/ocsort/association.py#L252 — diff_angle_cos = inertia_X * X + inertia_Y * Y
             # Dot product of inertia and direction
             diff_cos = inertia_x * X[t * n_dets + d] + inertia_y * Y[t * n_dets + d]
+            # Ref: references/ocsort/association.py#L253 — np.clip(diff_angle_cos, -1, 1)
             # Clip to [-1, 1]
             if diff_cos > 1.0:
                 diff_cos = 1.0
             elif diff_cos < -1.0:
                 diff_cos = -1.0
+            # Ref: references/ocsort/association.py#L254-L255 — arccos then (pi/2 - |angle|) / pi
             # angle_diff = (pi/2 - |arccos(cos)|) / pi
             diff_angle = (M_PI / 2.0 - fabs(acos(diff_cos))) / M_PI
+            # Ref: references/ocsort/association.py#L261,265-267 — valid_mask * diff_angle * vdc_weight * scores
             # Apply valid mask, vdc_weight, and detection score
             score_val = dets[d * 5 + 4]
             # Layout: angle_diff_cost[d * n_trks + t] (det x trk)
@@ -340,6 +397,7 @@ cdef void associate(
     free(X)
 
     # ---- Compute IOU matrix ----
+    # Ref: references/ocsort/association.py#L260 — iou_matrix = iou_batch(detections, trackers)
     # Extract bbox-only arrays (4 values per entry)
     cdef double *det_bb = <double *>malloc(n_dets * 4 * sizeof(double))
     cdef double *trk_bb = <double *>malloc(n_trks * 4 * sizeof(double))
@@ -356,17 +414,20 @@ cdef void associate(
     free(trk_bb)
 
     # ---- Check for one-to-one shortcut ----
+    # Ref: references/ocsort/association.py#L269-L272 — if a.sum(1).max()==1 and a.sum(0).max()==1
     cdef int use_shortcut = 0
     cdef int *row_sum = <int *>calloc(n_dets, sizeof(int))
     cdef int *col_sum = <int *>calloc(n_trks, sizeof(int))
     cdef int max_row_sum = 0, max_col_sum = 0
 
+    # Ref: references/ocsort/association.py#L270 — a = (iou_matrix > iou_threshold).astype(np.int32)
     for i in range(n_dets):
         for j in range(n_trks):
             if iou_matrix[i * n_trks + j] > iou_threshold:
                 row_sum[i] += 1
                 col_sum[j] += 1
 
+    # Ref: references/ocsort/association.py#L271 — a.sum(1).max(), a.sum(0).max()
     for i in range(n_dets):
         if row_sum[i] > max_row_sum:
             max_row_sum = row_sum[i]
@@ -383,6 +444,7 @@ cdef void associate(
 
     if n_dets > 0 and n_trks > 0:
         if max_row_sum == 1 and max_col_sum == 1:
+            # Ref: references/ocsort/association.py#L272 — matched_indices = np.stack(np.where(a), axis=1)
             # One-to-one shortcut: directly read pairs from threshold mask
             use_shortcut = 1
             mi_a = <int *>malloc((n_dets + 1) * sizeof(int))
@@ -396,6 +458,7 @@ cdef void associate(
                         n_mi += 1
                         break
         else:
+            # Ref: references/ocsort/association.py#L274 — matched_indices = linear_assignment(-(iou_matrix+angle_diff_cost))
             # Build negated cost matrix: -(iou + angle_diff_cost)
             neg_cost = <double *>malloc(n_dets * n_trks * sizeof(double))
             for i in range(n_dets):
@@ -413,10 +476,12 @@ cdef void associate(
     free(angle_diff_cost)
 
     # ---- Filter matches by IOU threshold and build output ----
+    # Ref: references/ocsort/association.py#L287-L298 — filter matched_indices by iou_threshold
     cdef int *matched_d = <int *>calloc(n_dets, sizeof(int))
     cdef int *matched_t = <int *>calloc(n_trks, sizeof(int))
     matched_count = 0
 
+    # Ref: references/ocsort/association.py#L290 — if iou_matrix[m[0], m[1]] < iou_threshold: unmatched
     for i in range(n_mi):
         d = mi_a[i]
         t = mi_b[i]
@@ -439,6 +504,7 @@ cdef void associate(
 
     n_matches[0] = matched_count
 
+    # Ref: references/ocsort/association.py#L278-L281 — collect unmatched detections
     # Collect unmatched detections
     ud_count = 0
     for i in range(n_dets):
@@ -447,6 +513,7 @@ cdef void associate(
             ud_count += 1
     n_unmatched_dets[0] = ud_count
 
+    # Ref: references/ocsort/association.py#L282-L285 — collect unmatched trackers
     # Collect unmatched trackers
     ut_count = 0
     for i in range(n_trks):

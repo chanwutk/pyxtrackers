@@ -27,6 +27,7 @@ from pyxtrackers.bytetrack.kalman_filter cimport KalmanFilter, kf_init, kf_initi
 from pyxtrackers.bytetrack.matching cimport compute_iou_cost, fuse_score, linear_assignment
 
 
+# Ref: references/bytetrack/basetrack.py#L5-L9 (TrackState)
 # Track state enum
 cdef enum TrackState:
     New = 0
@@ -39,6 +40,7 @@ cdef enum TrackState:
 # Bounding box conversion utilities (all nogil)
 # ============================================================
 
+# Ref: references/bytetrack/byte_tracker.py#L113-L120 (STrack.tlwh_to_xyah)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -50,6 +52,7 @@ cdef void tlwh_to_xyah(double *tlwh, double *xyah) noexcept nogil:
     xyah[3] = tlwh[3]
 
 
+# Ref: references/bytetrack/byte_tracker.py#L134-L137 (STrack.tlwh_to_tlbr)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -61,6 +64,7 @@ cdef void tlwh_to_tlbr(double *tlwh, double *tlbr) noexcept nogil:
     tlbr[3] = tlwh[1] + tlwh[3]
 
 
+# Ref: references/bytetrack/byte_tracker.py#L127-L130 (STrack.tlbr_to_tlwh)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -72,6 +76,7 @@ cdef void tlbr_to_tlwh(double *tlbr, double *tlwh) noexcept nogil:
     tlwh[3] = tlbr[3] - tlbr[1]
 
 
+# Ref: references/bytetrack/byte_tracker.py#L90-L99 (STrack.tlwh property, inverse of tlwh_to_xyah)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -88,6 +93,7 @@ cdef void xyah_to_tlwh(double *xyah, double *tlwh) noexcept nogil:
 # STrack struct and cdef functions (all nogil)
 # ============================================================
 
+# Ref: references/bytetrack/byte_tracker.py#L11-L22 (STrack.__init__)
 # STrack structure
 cdef struct STrack:
     KalmanFilter kf
@@ -103,6 +109,7 @@ cdef struct STrack:
     int start_frame
 
 
+# Ref: references/bytetrack/byte_tracker.py#L13-L22 (STrack.__init__)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -113,18 +120,21 @@ cdef void STrack_init(STrack *self, double *tlwh, double score, int track_id) no
     # Initialize Kalman filter
     kf_init(&self.kf)
 
+    # Ref: references/bytetrack/byte_tracker.py#L16 — self._tlwh = np.asarray(tlwh, dtype=np.float64)
     # Store initial bounding box
     self._tlwh[0] = tlwh[0]
     self._tlwh[1] = tlwh[1]
     self._tlwh[2] = tlwh[2]
     self._tlwh[3] = tlwh[3]
 
+    # Ref: references/bytetrack/byte_tracker.py#L18 — self.mean, self.covariance = None, None
     # Initialize mean and covariance to zero
     for i in range(8):
         self.mean[i] = 0.0
     for i in range(64):
         self.covariance[i] = 0.0
 
+    # Ref: references/bytetrack/byte_tracker.py#L19-L22 — is_activated=False, score=score, tracklet_len=0
     # Initialize state fields
     self.is_activated = 0
     self.score = score
@@ -135,6 +145,7 @@ cdef void STrack_init(STrack *self, double *tlwh, double score, int track_id) no
     self.start_frame = 0
 
 
+# Ref: references/bytetrack/byte_tracker.py#L24-L28 (STrack.predict)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -149,10 +160,12 @@ cdef void STrack_predict(STrack *self) noexcept nogil:
         for j in range(8):
             self.kf.P[i][j] = self.covariance[i * 8 + j]
 
+    # Ref: references/bytetrack/byte_tracker.py#L26-L27 — if state != Tracked: mean_state[7] = 0
     # Set velocity to 0 if not tracked
     if self.state != TrackState.Tracked:
         self.kf.x[7] = 0.0
 
+    # Ref: references/bytetrack/byte_tracker.py#L28 — self.mean, self.covariance = self.kalman_filter.predict(mean_state, self.covariance)
     # Run Kalman filter prediction
     kf_predict(&self.kf)
 
@@ -164,6 +177,7 @@ cdef void STrack_predict(STrack *self) noexcept nogil:
             self.covariance[i * 8 + j] = self.kf.P[i][j]
 
 
+# Ref: references/bytetrack/byte_tracker.py#L43-L55 (STrack.activate)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -174,25 +188,31 @@ cdef void STrack_activate(STrack *self, int frame_id, int *track_id_counter) noe
     # Convert tlwh to xyah for Kalman filter
     tlwh_to_xyah(self._tlwh, xyah)
 
+    # Ref: references/bytetrack/byte_tracker.py#L47 — self.mean, self.covariance = self.kalman_filter.initiate(self.tlwh_to_xyah(self._tlwh))
     # Initialize Kalman filter with measurement
     kf_initiate(&self.kf, xyah, self.mean, self.covariance)
 
+    # Ref: references/bytetrack/byte_tracker.py#L46 — self.track_id = self.next_id()
     # Assign track ID from counter
     track_id_counter[0] += 1
     self.track_id = track_id_counter[0]
 
+    # Ref: references/bytetrack/byte_tracker.py#L49-L50 — tracklet_len=0, state=Tracked
     # Reset tracklet length and set state
     self.tracklet_len = 0
     self.state = TrackState.Tracked
 
+    # Ref: references/bytetrack/byte_tracker.py#L51-L52 — if frame_id == 1: self.is_activated = True
     # Only activate on first frame
     if frame_id == 1:
         self.is_activated = 1
 
+    # Ref: references/bytetrack/byte_tracker.py#L54-L55 — self.frame_id = frame_id; self.start_frame = frame_id
     self.frame_id = frame_id
     self.start_frame = frame_id
 
 
+# Ref: references/bytetrack/byte_tracker.py#L57-L67 (STrack.re_activate)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -211,6 +231,8 @@ cdef void STrack_re_activate(STrack *self, double *new_tlwh, double new_score, i
         for j in range(8):
             self.kf.P[i][j] = self.covariance[i * 8 + j]
 
+    # Ref: references/bytetrack/byte_tracker.py#L58-L60 — self.mean, self.covariance = self.kalman_filter.update(
+    #     self.mean, self.covariance, self.tlwh_to_xyah(new_track.tlwh))
     # Update Kalman filter with new measurement
     kf_update(&self.kf, xyah)
 
@@ -221,20 +243,24 @@ cdef void STrack_re_activate(STrack *self, double *new_tlwh, double new_score, i
         for j in range(8):
             self.covariance[i * 8 + j] = self.kf.P[i][j]
 
+    # Ref: references/bytetrack/byte_tracker.py#L61-L64 — tracklet_len=0, state=Tracked, is_activated=True, frame_id=frame_id
     # Update state fields
     self.tracklet_len = 0
     self.state = TrackState.Tracked
     self.is_activated = 1
     self.frame_id = frame_id
 
+    # Ref: references/bytetrack/byte_tracker.py#L65-L66 — if new_id: self.track_id = self.next_id()
     # Assign new ID if requested
     if new_id:
         track_id_counter[0] += 1
         self.track_id = track_id_counter[0]
 
+    # Ref: references/bytetrack/byte_tracker.py#L67 — self.score = new_track.score
     self.score = new_score
 
 
+# Ref: references/bytetrack/byte_tracker.py#L69-L86 (STrack.update)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -243,6 +269,7 @@ cdef void STrack_update(STrack *self, double *new_tlwh, double new_score, int fr
     cdef double xyah[4]
     cdef int i, j
 
+    # Ref: references/bytetrack/byte_tracker.py#L77-L78 — self.frame_id = frame_id; self.tracklet_len += 1
     # Update frame and tracklet length
     self.frame_id = frame_id
     self.tracklet_len += 1
@@ -257,6 +284,8 @@ cdef void STrack_update(STrack *self, double *new_tlwh, double new_score, int fr
         for j in range(8):
             self.kf.P[i][j] = self.covariance[i * 8 + j]
 
+    # Ref: references/bytetrack/byte_tracker.py#L81-L82 — self.mean, self.covariance = self.kalman_filter.update(
+    #     self.mean, self.covariance, self.tlwh_to_xyah(new_tlwh))
     # Update Kalman filter with new measurement
     kf_update(&self.kf, xyah)
 
@@ -267,12 +296,14 @@ cdef void STrack_update(STrack *self, double *new_tlwh, double new_score, int fr
         for j in range(8):
             self.covariance[i * 8 + j] = self.kf.P[i][j]
 
+    # Ref: references/bytetrack/byte_tracker.py#L83-L86 — state=Tracked, is_activated=True, score=new_track.score
     # Mark as tracked and activated
     self.state = TrackState.Tracked
     self.is_activated = 1
     self.score = new_score
 
 
+# Ref: references/bytetrack/basetrack.py#L48-L49 (BaseTrack.mark_lost)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -281,6 +312,7 @@ cdef void STrack_mark_lost(STrack *self) noexcept nogil:
     self.state = TrackState.Lost
 
 
+# Ref: references/bytetrack/basetrack.py#L51-L52 (BaseTrack.mark_removed)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -289,6 +321,7 @@ cdef void STrack_mark_removed(STrack *self) noexcept nogil:
     self.state = TrackState.Removed
 
 
+# Ref: references/bytetrack/byte_tracker.py#L90-L99 (STrack.tlwh property)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -297,17 +330,20 @@ cdef void STrack_get_tlwh(STrack *self, double *tlwh) noexcept nogil:
     cdef double xyah[4]
     cdef int i
 
+    # Ref: references/bytetrack/byte_tracker.py#L94-L95 — if self.mean is None: return self._tlwh.copy()
     if self.mean[0] == 0.0 and self.mean[1] == 0.0:
         # Mean not initialized, use stored tlwh
         for i in range(4):
             tlwh[i] = self._tlwh[i]
     else:
+        # Ref: references/bytetrack/byte_tracker.py#L96-L99 — ret=mean[:4].copy(); ret[2]*=ret[3]; ret[:2]-=ret[2:]/2
         # Convert mean (xyah) to tlwh
         for i in range(4):
             xyah[i] = self.mean[i]
         xyah_to_tlwh(xyah, tlwh)
 
 
+# Ref: references/bytetrack/byte_tracker.py#L103-L109 (STrack.tlbr property)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -322,6 +358,7 @@ cdef void STrack_get_tlbr(STrack *self, double *tlbr) noexcept nogil:
 # Track list helper cdef functions (using vector / map)
 # ============================================================
 
+# Ref: references/bytetrack/byte_tracker.py#L290-L301 (joint_stracks)
 cdef void joint_stracks(vector[STrack*] *a, vector[STrack*] *b, vector[STrack*] *out):
     """Combine two track lists into out, removing duplicates by track_id (map)."""
     cdef cppmap[int, int] exists
@@ -338,6 +375,7 @@ cdef void joint_stracks(vector[STrack*] *a, vector[STrack*] *b, vector[STrack*] 
             out[0].push_back(b[0][i])
 
 
+# Ref: references/bytetrack/byte_tracker.py#L304-L312 (sub_stracks)
 cdef void sub_stracks(vector[STrack*] *a, vector[STrack*] *b, vector[STrack*] *out):
     """Remove from a any track whose track_id appears in b (map)."""
     cdef cppmap[int, int] b_ids
@@ -352,6 +390,7 @@ cdef void sub_stracks(vector[STrack*] *a, vector[STrack*] *b, vector[STrack*] *o
             out[0].push_back(a[0][i])
 
 
+# Ref: references/bytetrack/byte_tracker.py#L315-L328 (remove_duplicate_stracks)
 cdef void remove_duplicate_stracks(
     vector[STrack*] *stracksa, vector[STrack*] *stracksb,
     vector[STrack*] *out_a, vector[STrack*] *out_b
@@ -379,6 +418,7 @@ cdef void remove_duplicate_stracks(
     cdef double *cost = <double*>malloc(na * nb * sizeof(double))
     compute_iou_cost(atlbrs, na, btlbrs, nb, cost)
 
+    # Ref: references/bytetrack/byte_tracker.py#L317 — pairs = np.where(pdist < 0.15)  [threshold 0.15]
     # Find duplicates (cost < 0.15 means IOU > 0.85)
     cdef int *dup_a = <int*>calloc(na, sizeof(int))
     cdef int *dup_b = <int*>calloc(nb, sizeof(int))
@@ -386,6 +426,7 @@ cdef void remove_duplicate_stracks(
     for i in range(na):
         for j in range(nb):
             if cost[i * nb + j] < 0.15:
+                # Ref: references/bytetrack/byte_tracker.py#L320-L325 — compare track durations; remove the shorter-lived duplicate
                 # Compare track durations to decide which to remove
                 timep = stracksa[0][i].frame_id - stracksa[0][i].start_frame
                 timeq = stracksb[0][j].frame_id - stracksb[0][j].start_frame
@@ -450,6 +491,7 @@ cdef class BYTETracker:
         self._frame_id = 0
         self.track_id_counter = 0
 
+    # Ref: references/bytetrack/byte_tracker.py#L144-L155 (BYTETracker.__init__)
     def __init__(self, args=None, frame_rate=30, track_thresh=0.5,
                  match_thresh=0.8, track_buffer=30, mot20=False):
         if args is not None:
@@ -459,7 +501,9 @@ cdef class BYTETracker:
             mot20 = getattr(args, 'mot20', mot20)
         self._track_thresh = track_thresh
         self._match_thresh = match_thresh
+        # Ref: references/bytetrack/byte_tracker.py#L152 — self.det_thresh = args.track_thresh + 0.1
         self._det_thresh = track_thresh + 0.1
+        # Ref: references/bytetrack/byte_tracker.py#L153-L154 — buffer_size = int(frame_rate/30 * track_buffer); max_time_lost = buffer_size
         self._buffer_size = int(frame_rate / 30.0 * track_buffer)
         self._max_time_lost = self._buffer_size
         self._mot20 = 1 if mot20 else 0
@@ -491,6 +535,7 @@ cdef class BYTETracker:
                 free(self._removed_stracks[i])
         self._removed_stracks.clear()
 
+    # Ref: references/bytetrack/byte_tracker.py#L157-L287 (BYTETracker.update)
     @cython.boundscheck(False)  # type: ignore
     @cython.wraparound(False)  # type: ignore
     @cython.nonecheck(False)  # type: ignore
@@ -511,9 +556,11 @@ cdef class BYTETracker:
         cdef int n_high, n_low
         cdef int hi_idx, lo_idx
 
+        # Ref: references/bytetrack/byte_tracker.py#L158 — self.frame_id += 1
         # Increment frame counter
         self._frame_id += 1
 
+        # Ref: references/bytetrack/byte_tracker.py#L175-L183 — Filter high/low score detections
         # ---- Filter detections by threshold ----
         # Count high-score and low-score detections
         n_high = 0
@@ -545,6 +592,7 @@ cdef class BYTETracker:
                 low_sc[lo_idx] = scores[i]
                 lo_idx += 1
 
+        # Ref: references/bytetrack/byte_tracker.py#L185-L190 — Create detection STracks from high-score bboxes
         # ---- Create high-score detection STracks ----
         cdef vector[STrack*] detections
         cdef STrack *det_ptr
@@ -556,6 +604,7 @@ cdef class BYTETracker:
             STrack_init(det_ptr, det_tlwh_buf, high_sc[i], -1)
             detections.push_back(det_ptr)
 
+        # Ref: references/bytetrack/byte_tracker.py#L193-L199 — Separate unconfirmed / tracked from self.tracked_stracks
         # ---- Separate tracked / unconfirmed ----
         cdef vector[STrack*] unconfirmed
         cdef vector[STrack*] tracked
@@ -565,10 +614,13 @@ cdef class BYTETracker:
             else:
                 tracked.push_back(self._tracked_stracks[i])
 
+        # Ref: references/bytetrack/byte_tracker.py#L201-L218 — Step 2: First association with high-score detection boxes
         # ---- Step 2: First association with high-score detections ----
+        # Ref: references/bytetrack/byte_tracker.py#L202 — strack_pool = joint_stracks(tracked_stracks, self.lost_stracks)
         cdef vector[STrack*] strack_pool
         joint_stracks(&tracked, &self._lost_stracks, &strack_pool)
 
+        # Ref: references/bytetrack/byte_tracker.py#L204 — STrack.multi_predict(strack_pool)
         # Predict current location for all tracks in pool
         for i in range(<int>strack_pool.size()):
             STrack_predict(strack_pool[i])
@@ -605,10 +657,12 @@ cdef class BYTETracker:
             for i in range(n_det):
                 STrack_get_tlbr(detections[i], &det_tlbrs[i * 4])
 
+            # Ref: references/bytetrack/byte_tracker.py#L205 — dists = matching.iou_distance(strack_pool, detections)
             # Compute IOU cost matrix
             cost_mat = <double*>malloc(n_pool * n_det * sizeof(double))
             compute_iou_cost(pool_tlbrs, n_pool, det_tlbrs, n_det, cost_mat)
 
+            # Ref: references/bytetrack/byte_tracker.py#L206-L207 — if not mot20: dists = matching.fuse_score(dists, detections)
             # Fuse detection scores if not MOT20
             if self._mot20 == 0:
                 det_sc_tmp = <double*>malloc(n_det * sizeof(double))
@@ -617,6 +671,7 @@ cdef class BYTETracker:
                 fuse_score(cost_mat, det_sc_tmp, n_pool, n_det)
                 free(det_sc_tmp)
 
+            # Ref: references/bytetrack/byte_tracker.py#L208 — matches, u_track, u_detection = matching.linear_assignment(dists, thresh=match_thresh)
             # Solve linear assignment
             min_dim = n_pool if n_pool < n_det else n_det
             match_a = <int*>malloc((min_dim + 1) * sizeof(int))
@@ -642,6 +697,7 @@ cdef class BYTETracker:
                 unmatched_det[i] = i
             n_unmatched_det = n_det
 
+        # Ref: references/bytetrack/byte_tracker.py#L210-L218 — Process first-round matches (update or re-activate)
         # Process first-round matches
         cdef STrack *trk
         cdef STrack *det_trk
@@ -652,10 +708,12 @@ cdef class BYTETracker:
             det_trk = detections[match_b[i]]
             STrack_get_tlwh(det_trk, det_tlwh_tmp)
             if trk.state == TrackState.Tracked:
+                # Ref: references/bytetrack/byte_tracker.py#L213-L215 — track.update(det, frame_id); activated_starcks.append(track)
                 # Update matched tracked track
                 STrack_update(trk, det_tlwh_tmp, det_trk.score, self._frame_id)
                 activated_starcks.push_back(trk)
             else:
+                # Ref: references/bytetrack/byte_tracker.py#L217-L218 — track.re_activate(det, frame_id, new_id=False); refind_stracks.append(track)
                 # Re-activate matched lost track
                 STrack_re_activate(trk, det_tlwh_tmp, det_trk.score, self._frame_id, 0, &self.track_id_counter)
                 refind_stracks_v.push_back(trk)
@@ -663,6 +721,7 @@ cdef class BYTETracker:
         free(match_a); match_a = NULL
         free(match_b); match_b = NULL
 
+        # Ref: references/bytetrack/byte_tracker.py#L220-L245 — Step 3: Second association with low-score detection boxes
         # ---- Step 3: Second association with low-score detections ----
         # Create low-score detection STracks
         cdef vector[STrack*] detections_second
@@ -672,6 +731,7 @@ cdef class BYTETracker:
             STrack_init(det_ptr, det_tlwh_buf, low_sc[i], -1)
             detections_second.push_back(det_ptr)
 
+        # Ref: references/bytetrack/byte_tracker.py#L228 — r_tracked_stracks = [strack_pool[i] for i in u_track if state == Tracked]
         # Build r_tracked: unmatched tracks from pool that are in Tracked state
         cdef vector[STrack*] r_tracked
         for i in range(n_unmatched_trk):
@@ -699,10 +759,12 @@ cdef class BYTETracker:
             for i in range(n_det2):
                 STrack_get_tlbr(detections_second[i], &det_tlbrs[i * 4])
 
+            # Ref: references/bytetrack/byte_tracker.py#L229 — dists = matching.iou_distance(r_tracked_stracks, detections_second)
             # Compute cost and solve assignment
             cost_mat = <double*>malloc(n_rtracked * n_det2 * sizeof(double))
             compute_iou_cost(pool_tlbrs, n_rtracked, det_tlbrs, n_det2, cost_mat)
 
+            # Ref: references/bytetrack/byte_tracker.py#L230 — matches, u_track, u_detection_second = matching.linear_assignment(dists, thresh=0.5)
             min_dim = n_rtracked if n_rtracked < n_det2 else n_det2
             match_a2 = <int*>malloc((min_dim + 1) * sizeof(int))
             match_b2 = <int*>malloc((min_dim + 1) * sizeof(int))
@@ -725,6 +787,7 @@ cdef class BYTETracker:
                 unmatched_det2[i] = i
             n_unmatched_det2 = n_det2
 
+        # Ref: references/bytetrack/byte_tracker.py#L231-L239 — Process second-round matches (update or re-activate)
         # Process second-round matches
         for i in range(n_matches2):
             trk = r_tracked[match_a2[i]]
@@ -739,6 +802,7 @@ cdef class BYTETracker:
 
         free(match_a2); free(match_b2)
 
+        # Ref: references/bytetrack/byte_tracker.py#L241-L245 — Mark unmatched tracked as lost
         # Mark unmatched r_tracked as lost
         for i in range(n_unmatched_trk2):
             trk = r_tracked[unmatched_trk2[i]]
@@ -748,6 +812,7 @@ cdef class BYTETracker:
 
         free(unmatched_trk2); free(unmatched_det2)
 
+        # Ref: references/bytetrack/byte_tracker.py#L247-L259 — Deal with unconfirmed tracks
         # ---- Deal with unconfirmed tracks ----
         # Build remaining detections from first round's unmatched
         cdef vector[STrack*] remaining_dets
@@ -775,10 +840,12 @@ cdef class BYTETracker:
             for i in range(n_remaining):
                 STrack_get_tlbr(remaining_dets[i], &det_tlbrs[i * 4])
 
+            # Ref: references/bytetrack/byte_tracker.py#L249 — dists = matching.iou_distance(unconfirmed, detections)
             # Compute cost, fuse scores, solve assignment
             cost_mat = <double*>malloc(n_unconf * n_remaining * sizeof(double))
             compute_iou_cost(pool_tlbrs, n_unconf, det_tlbrs, n_remaining, cost_mat)
 
+            # Ref: references/bytetrack/byte_tracker.py#L250-L251 — if not mot20: dists = matching.fuse_score(dists, detections)
             if self._mot20 == 0:
                 det_sc_tmp = <double*>malloc(n_remaining * sizeof(double))
                 for i in range(n_remaining):
@@ -786,6 +853,7 @@ cdef class BYTETracker:
                 fuse_score(cost_mat, det_sc_tmp, n_unconf, n_remaining)
                 free(det_sc_tmp)
 
+            # Ref: references/bytetrack/byte_tracker.py#L252 — matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
             min_dim = n_unconf if n_unconf < n_remaining else n_remaining
             match_a3 = <int*>malloc((min_dim + 1) * sizeof(int))
             match_b3 = <int*>malloc((min_dim + 1) * sizeof(int))
@@ -808,6 +876,7 @@ cdef class BYTETracker:
                 u_det3[i] = i
             n_u_det3 = n_remaining
 
+        # Ref: references/bytetrack/byte_tracker.py#L253-L255 — Update matched unconfirmed tracks
         # Process unconfirmed matches
         for i in range(n_matches3):
             trk = unconfirmed[match_a3[i]]
@@ -818,6 +887,7 @@ cdef class BYTETracker:
 
         free(match_a3); free(match_b3)
 
+        # Ref: references/bytetrack/byte_tracker.py#L256-L259 — Mark unmatched unconfirmed as removed
         # Mark unmatched unconfirmed as removed
         for i in range(n_u_unconf):
             trk = unconfirmed[u_unconf[i]]
@@ -826,17 +896,20 @@ cdef class BYTETracker:
 
         free(u_unconf)
 
+        # Ref: references/bytetrack/byte_tracker.py#L261-L267 — Step 4: Init new stracks (score >= det_thresh)
         # ---- Initialize new tracks ----
         for i in range(n_u_det3):
             det_trk = remaining_dets[u_det3[i]]
             if det_trk.score < self._det_thresh:
                 continue
+            # Ref: references/bytetrack/byte_tracker.py#L266-L267 — track.activate(kalman_filter, frame_id); activated_starcks.append(track)
             # Activate detection as new track
             STrack_activate(det_trk, self._frame_id, &self.track_id_counter)
             activated_starcks.push_back(det_trk)
 
         free(u_det3)
 
+        # Ref: references/bytetrack/byte_tracker.py#L268-L272 — Step 5: Update state — remove old lost tracks
         # ---- Remove old lost tracks ----
         for i in range(<int>self._lost_stracks.size()):
             trk = self._lost_stracks[i]
@@ -844,6 +917,7 @@ cdef class BYTETracker:
                 STrack_mark_removed(trk)
                 removed_stracks_v.push_back(trk)
 
+        # Ref: references/bytetrack/byte_tracker.py#L276 — self.tracked_stracks = [t for t in self.tracked_stracks if t.state == Tracked]
         # ---- Update track lists ----
         # tracked = [t for t in tracked_stracks if t.state == Tracked]
         cdef vector[STrack*] new_tracked
@@ -851,38 +925,46 @@ cdef class BYTETracker:
             if self._tracked_stracks[i].state == TrackState.Tracked:
                 new_tracked.push_back(self._tracked_stracks[i])
 
+        # Ref: references/bytetrack/byte_tracker.py#L277 — self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_starcks)
         # tracked = joint(tracked, activated)
         cdef vector[STrack*] tmp1
         joint_stracks(&new_tracked, &activated_starcks, &tmp1)
 
+        # Ref: references/bytetrack/byte_tracker.py#L278 — self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
         # tracked = joint(tracked, refind)
         cdef vector[STrack*] tmp2
         joint_stracks(&tmp1, &refind_stracks_v, &tmp2)
         self._tracked_stracks = tmp2
 
+        # Ref: references/bytetrack/byte_tracker.py#L279 — self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         # lost = sub(lost, tracked)
         cdef vector[STrack*] tmp3
         sub_stracks(&self._lost_stracks, &self._tracked_stracks, &tmp3)
 
+        # Ref: references/bytetrack/byte_tracker.py#L280 — self.lost_stracks.extend(lost_stracks)
         # lost.extend(lost_local)
         for i in range(<int>lost_stracks_v.size()):
             tmp3.push_back(lost_stracks_v[i])
 
+        # Ref: references/bytetrack/byte_tracker.py#L282 — self.removed_stracks.extend(removed_stracks)
         # removed.extend(removed_local) — extend BEFORE sub to prevent double-ownership
         for i in range(<int>removed_stracks_v.size()):
             self._removed_stracks.push_back(removed_stracks_v[i])
 
+        # Ref: references/bytetrack/byte_tracker.py#L281 — self.lost_stracks = sub_stracks(self.lost_stracks, self.removed_stracks)
         # lost = sub(lost, removed) — now includes newly removed tracks
         cdef vector[STrack*] tmp4
         sub_stracks(&tmp3, &self._removed_stracks, &tmp4)
         self._lost_stracks = tmp4
 
+        # Ref: references/bytetrack/byte_tracker.py#L283 — self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(...)
         # Deduplicate between tracked and lost
         cdef vector[STrack*] out_tracked, out_lost
         remove_duplicate_stracks(&self._tracked_stracks, &self._lost_stracks, &out_tracked, &out_lost)
         self._tracked_stracks = out_tracked
         self._lost_stracks = out_lost
 
+        # Ref: references/bytetrack/byte_tracker.py#L285-L286 — output_stracks = [t for t in tracked_stracks if t.is_activated]
         # ---- Build output ----
         cdef int n_output = 0
         cdef double out_tlbr[4]

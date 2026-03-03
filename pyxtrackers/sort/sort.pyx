@@ -37,6 +37,8 @@ cdef extern from "lapjv.h" nogil:
 np.random.seed(0)
 
 
+# Ref: references/sort/sort.py#L27-L35 (linear_assignment)
+# Wraps vendor/lapjv/lapjv.cpp; replaces lap.lapjv in the reference.
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -47,6 +49,8 @@ cdef void lapjv_solve(
     """Solve linear assignment using LAPJV on raw pointer arrays (C-level)."""
     cdef int n = n_rows if n_rows > n_cols else n_cols
     cdef int i, x_val
+    # Ref: references/sort/sort.py#L30 (lap.lapjv(cost_matrix, extend_cost=True))
+    # Pad cost matrix to square for LAPJV (equivalent to extend_cost=True)
     cdef double *cost_ext = <double *>calloc(n * n, sizeof(double))
     for i in range(n_rows):
         for x_val in range(n_cols):
@@ -59,6 +63,8 @@ cdef void lapjv_solve(
     lapjv_internal(n, cost_ptr, x_c, y_c)
     free(cost_ptr)
     free(cost_ext)
+    # Ref: references/sort/sort.py#L31 ([[y[i],i] for i in x if i >= 0])
+    # Collect valid assignments (row, col) pairs
     cdef int count = 0
     for i in range(n_rows):
         x_val = x_c[i]
@@ -71,6 +77,8 @@ cdef void lapjv_solve(
     n_raw_matches[0] = count
 
 
+# Ref: references/sort/sort.py#L38-L54 (iou_batch)
+# No +1 PASCAL VOC formula (unlike ByteTrack).
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -80,20 +88,26 @@ cdef void iou_batch(double *bb1, int N, double *bb2, int M, double *out) noexcep
     cdef double xx1, yy1, xx2, yy2, w, h, wh, area1, area2
     for i in range(N):
         ai = i * 4
+        # Ref: references/sort/sort.py#L52-L53 (area computation in denominator)
         area1 = (bb1[ai+2] - bb1[ai+0]) * (bb1[ai+3] - bb1[ai+1])
         for j in range(M):
             bj = j * 4
+            # Ref: references/sort/sort.py#L45-L48 (xx1, yy1, xx2, yy2 via np.maximum/np.minimum)
             xx1 = fmax(bb1[ai+0], bb2[bj+0])
             yy1 = fmax(bb1[ai+1], bb2[bj+1])
             xx2 = fmin(bb1[ai+2], bb2[bj+2])
             yy2 = fmin(bb1[ai+3], bb2[bj+3])
+            # Ref: references/sort/sort.py#L49-L51 (w, h, wh)
             w = fmax(0.0, xx2 - xx1)
             h = fmax(0.0, yy2 - yy1)
             wh = w * h
             area2 = (bb2[bj+2] - bb2[bj+0]) * (bb2[bj+3] - bb2[bj+1])
+            # Ref: references/sort/sort.py#L52-L53 (o = wh / (area1 + area2 - wh))
             out[i * M + j] = wh / (area1 + area2 - wh)
 
 
+# Ref: references/sort/sort.py#L57-L69 (convert_bbox_to_z)
+# Converts [x1,y1,x2,y2] -> [cx,cy,scale,ratio]
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -105,14 +119,20 @@ cdef void convert_bbox_to_z(double *bbox, double *z) noexcept nogil:
         bbox: Bounding box [x1, y1, x2, y2]
         z: Pointer to array of size 4 to store result [x, y, s, r]
     """
+    # Ref: references/sort/sort.py#L63-L64 (w = bbox[2] - bbox[0], h = bbox[3] - bbox[1])
     cdef double w = bbox[2] - bbox[0]
     cdef double h = bbox[3] - bbox[1]
+    # Ref: references/sort/sort.py#L65-L66 (x = bbox[0] + w/2., y = bbox[1] + h/2.)
     z[0] = bbox[0] + w / 2.0
     z[1] = bbox[1] + h / 2.0
+    # Ref: references/sort/sort.py#L67 (s = w * h)
     z[2] = w * h  # scale is just area
+    # Ref: references/sort/sort.py#L68 (r = w / float(h))
     z[3] = w / h
 
 
+# Ref: references/sort/sort.py#L72-L82 (convert_x_to_bbox)
+# Converts [cx,cy,scale,ratio] -> [x1,y1,x2,y2]
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -124,14 +144,17 @@ cdef void convert_x_to_bbox(double *x, double *bbox) noexcept nogil:
         x: State vector [x, y, s, r]
         bbox: Pointer to array of size 4 to store result [x1, y1, x2, y2]
     """
+    # Ref: references/sort/sort.py#L77-L78 (w = np.sqrt(x[2] * x[3]), h = x[2] / w)
     cdef double w = sqrt(x[2] * x[3])
     cdef double h = x[2] / w
+    # Ref: references/sort/sort.py#L80 ([x[0]-w/2., x[1]-h/2., x[0]+w/2., x[1]+h/2.])
     bbox[0] = x[0] - w/2.
     bbox[1] = x[1] - h/2.
     bbox[2] = x[0] + w/2.
     bbox[3] = x[1] + h/2.
 
 
+# Ref: references/sort/sort.py#L85-L112 (KalmanBoxTracker class)
 cdef struct KalmanBoxTracker:
     KalmanFilter kf
     int time_since_update
@@ -140,6 +163,7 @@ cdef struct KalmanBoxTracker:
     int hit_streak
     int age
 
+# Ref: references/sort/sort.py#L90-L112 (KalmanBoxTracker.__init__)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -150,48 +174,58 @@ cdef void KalmanBoxTracker_init(KalmanBoxTracker *self, double *bbox, int id) no
     Args:
         bbox: Initial bounding box [x1, y1, x2, y2]
     """
+    # Ref: references/sort/sort.py#L95 (self.kf = KalmanFilter(dim_x=7, dim_z=4))
     # Initialize Kalman Filter struct
     kf_init(&self.kf)
 
+    # Ref: references/sort/sort.py#L96 (self.kf.F = np.array([[1,0,0,0,1,0,0],...]))
     # Define constant velocity model
     # F is identity from init. Set specific values.
     self.kf.F[0][4] = 1.0
     self.kf.F[1][5] = 1.0
     self.kf.F[2][6] = 1.0
 
+    # Ref: references/sort/sort.py#L97 (self.kf.H = np.array([[1,0,0,0,0,0,0],...]))
     # H is zeros from init. Set specific values.
     self.kf.H[0][0] = 1.0
     self.kf.H[1][1] = 1.0
     self.kf.H[2][2] = 1.0
     self.kf.H[3][3] = 1.0
 
+    # Ref: references/sort/sort.py#L99 (self.kf.R[2:,2:] *= 10.)
     # Adjust covariance matrices
     # R[2:, 2:] *= 10.0
     self.kf.R[2][2] *= 10.0
     self.kf.R[3][3] *= 10.0
 
+    # Ref: references/sort/sort.py#L100 (self.kf.P[4:,4:] *= 1000.)
     # Give high uncertainty to the unobservable initial velocities
     # P[4:, 4:] *= 1000.0
     self.kf.P[4][4] *= 1000.0
     self.kf.P[5][5] *= 1000.0
     self.kf.P[6][6] *= 1000.0
 
+    # Ref: references/sort/sort.py#L101 (self.kf.P *= 10.)
     # P *= 10.0
     cdef int i, j
     for i in range(7):
         for j in range(7):
             self.kf.P[i][j] *= 10.0
 
+    # Ref: references/sort/sort.py#L102 (self.kf.Q[-1,-1] *= 0.01)
     # Q[-1, -1] *= 0.01
     self.kf.Q[6][6] *= 0.01
+    # Ref: references/sort/sort.py#L103 (self.kf.Q[4:,4:] *= 0.01)
     # Q[4:, 4:] *= 0.01
     self.kf.Q[4][4] *= 0.01
     self.kf.Q[5][5] *= 0.01
     self.kf.Q[6][6] *= 0.01 # Applied twice as in original code
 
+    # Ref: references/sort/sort.py#L105 (self.kf.x[:4] = convert_bbox_to_z(bbox))
     # Initialize state with bbox
     convert_bbox_to_z(bbox, self.kf.x)
 
+    # Ref: references/sort/sort.py#L106-L112 (time_since_update, id, history, hits, hit_streak, age)
     self.time_since_update = 0
     self.id = id
     # self.history = []
@@ -199,6 +233,7 @@ cdef void KalmanBoxTracker_init(KalmanBoxTracker *self, double *bbox, int id) no
     self.hit_streak = 0
     self.age = 0
 
+# Ref: references/sort/sort.py#L114-L122 (KalmanBoxTracker.update)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -209,16 +244,21 @@ cdef void KalmanBoxTracker_update(KalmanBoxTracker *self, double *bbox) noexcept
     Args:
         bbox: Observed bounding box [x1, y1, x2, y2]
     """
+    # Ref: references/sort/sort.py#L118 (self.time_since_update = 0)
     self.time_since_update = 0
+    # Ref: references/sort/sort.py#L119 (self.history = [])
     # self.history = []
+    # Ref: references/sort/sort.py#L120-L121 (self.hits += 1, self.hit_streak += 1)
     self.hits += 1
     self.hit_streak += 1
 
+    # Ref: references/sort/sort.py#L122 (self.kf.update(convert_bbox_to_z(bbox)))
     cdef double z[4]
     convert_bbox_to_z(bbox, z)
 
     kf_update(&self.kf, z)
 
+# Ref: references/sort/sort.py#L124-L136 (KalmanBoxTracker.predict)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -229,18 +269,26 @@ cdef void KalmanBoxTracker_predict(KalmanBoxTracker *self, double *bbox) noexcep
     Returns:
         Predicted bounding box [x1, y1, x2, y2]
     """
+    # Ref: references/sort/sort.py#L128-L129 (clamp negative scale+velocity)
+    # if((self.kf.x[6]+self.kf.x[2])<=0): self.kf.x[6] *= 0.0
     if (self.kf.x[6] + self.kf.x[2]) <= 0:
         self.kf.x[6] = 0.0
 
+    # Ref: references/sort/sort.py#L130 (self.kf.predict())
     kf_predict(&self.kf)
 
+    # Ref: references/sort/sort.py#L131 (self.age += 1)
     self.age += 1
+    # Ref: references/sort/sort.py#L132-L133 (if time_since_update>0: hit_streak=0)
     if self.time_since_update > 0:
         self.hit_streak = 0
+    # Ref: references/sort/sort.py#L134 (self.time_since_update += 1)
     self.time_since_update += 1
 
+    # Ref: references/sort/sort.py#L135-L136 (self.history.append(convert_x_to_bbox(...)); return self.history[-1])
     convert_x_to_bbox(self.kf.x, bbox)
 
+# Ref: references/sort/sort.py#L138-L142 (KalmanBoxTracker.get_state)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -251,9 +299,11 @@ cdef void KalmanBoxTracker_get_state(KalmanBoxTracker *self, double *bbox) noexc
     Returns:
         Current bounding box [x1, y1, x2, y2]
     """
+    # Ref: references/sort/sort.py#L142 (return convert_x_to_bbox(self.kf.x))
     convert_x_to_bbox(self.kf.x, bbox)
 
 
+# Ref: references/sort/sort.py#L145-L187 (associate_detections_to_trackers)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -283,6 +333,7 @@ cdef void associate(
     cdef int min_dim
     cdef int *matched_d = NULL
 
+    # Ref: references/sort/sort.py#L151-L152 (if len(trackers)==0: return empty)
     # Handle empty trackers
     if n_trks == 0:
         n_matches[0] = 0
@@ -291,19 +342,23 @@ cdef void associate(
         n_unmatched_dets[0] = n_dets
         return
 
+    # Ref: references/sort/sort.py#L154 (iou_matrix = iou_batch(detections, trackers))
     # Compute IOU matrix
     iou_matrix = <double *>malloc(n_dets * n_trks * sizeof(double))
     iou_batch(det_bb, n_dets, trk_bb, n_trks, iou_matrix)
 
+    # Ref: references/sort/sort.py#L156-L159 (one-to-one shortcut)
     # Check for one-to-one shortcut
     row_sum = <int *>calloc(n_dets, sizeof(int))
     col_sum = <int *>calloc(n_trks, sizeof(int))
 
+    # Ref: references/sort/sort.py#L157 (a = (iou_matrix > iou_threshold).astype(np.int32))
     for i in range(n_dets):
         for j in range(n_trks):
             if iou_matrix[i * n_trks + j] > iou_threshold:
                 row_sum[i] += 1
                 col_sum[j] += 1
+    # Ref: references/sort/sort.py#L158 (a.sum(1).max() == 1 and a.sum(0).max() == 1)
     for i in range(n_dets):
         if row_sum[i] > max_row:
             max_row = row_sum[i]
@@ -313,6 +368,7 @@ cdef void associate(
 
     if n_dets > 0 and n_trks > 0:
         if max_row == 1 and max_col == 1:
+            # Ref: references/sort/sort.py#L159 (matched_indices = np.stack(np.where(a), axis=1))
             # One-to-one shortcut
             mi_a = <int *>malloc((n_dets + 1) * sizeof(int))
             mi_b = <int *>malloc((n_dets + 1) * sizeof(int))
@@ -324,6 +380,7 @@ cdef void associate(
                         n_mi += 1
                         break
         else:
+            # Ref: references/sort/sort.py#L161 (matched_indices = linear_assignment(-iou_matrix))
             # Use linear assignment on negated IOU
             neg_iou = <double *>malloc(n_dets * n_trks * sizeof(double))
             for i in range(n_dets * n_trks):
@@ -337,12 +394,14 @@ cdef void associate(
     free(row_sum)
     free(col_sum)
 
+    # Ref: references/sort/sort.py#L174-L181 (filter out matched with low IOU)
     # Filter by IOU threshold
     matched_d = <int *>calloc(n_dets, sizeof(int))
     matched_count = 0
     for i in range(n_mi):
         d = mi_a[i]
         t = mi_b[i]
+        # Ref: references/sort/sort.py#L177 (if iou_matrix[m[0], m[1]] < iou_threshold)
         if iou_matrix[d * n_trks + t] >= iou_threshold:
             match_a[matched_count] = d
             match_b[matched_count] = t
@@ -350,6 +409,7 @@ cdef void associate(
             matched_d[d] = 1
     n_matches[0] = matched_count
 
+    # Ref: references/sort/sort.py#L165-L168 (unmatched_detections: d not in matched_indices[:,0])
     # Collect unmatched detections (includes those filtered by low IOU)
     ud_count = 0
     for i in range(n_dets):
@@ -366,6 +426,7 @@ cdef void associate(
     free(iou_matrix)
 
 
+# Ref: references/sort/sort.py#L190-L244 (Sort class)
 cdef class Sort:
     """
     SORT tracker implementation in Cython.
@@ -377,6 +438,7 @@ cdef class Sort:
     cdef int _frame_count
     cdef public int track_id_counter
 
+    # Ref: references/sort/sort.py#L191-L199 (Sort.__init__)
     def __init__(self, int max_age=1, int min_hits=3, double iou_threshold=0.3):
         """
         Set key parameters for SORT.
@@ -386,9 +448,11 @@ cdef class Sort:
             min_hits: Minimum hits before a track is confirmed
             iou_threshold: IOU threshold for matching
         """
+        # Ref: references/sort/sort.py#L195-L198 (max_age, min_hits, iou_threshold, trackers=[])
         self._max_age = max_age
         self._min_hits = min_hits
         self._iou_threshold = iou_threshold
+        # Ref: references/sort/sort.py#L199 (self.frame_count = 0)
         self._frame_count = 0
         self.track_id_counter = 0
 
@@ -402,6 +466,7 @@ cdef class Sort:
                 free(self._trackers[i])
         self._trackers.clear()
 
+    # Ref: references/sort/sort.py#L201-L244 (Sort.update)
     @cython.boundscheck(False)  # type: ignore
     @cython.wraparound(False)  # type: ignore
     @cython.nonecheck(False)  # type: ignore
@@ -431,17 +496,25 @@ cdef class Sort:
         cdef int n_output = 0
         cdef vector[int] dead_indices
 
+        # Ref: references/sort/sort.py#L210 (self.frame_count += 1)
         self._frame_count += 1
 
+        # Ref: references/sort/sort.py#L211-L222 (predict all trackers, remove NaN)
         # Get predicted locations from existing trackers
         n_trks = <int>self._trackers.size()
+        # Ref: references/sort/sort.py#L212 (trks = np.zeros((len(self.trackers), 5)))
         trks = <double *>calloc((n_trks + 1) * 4, sizeof(double))
+        # Ref: references/sort/sort.py#L213 (to_del = [])
         to_del = <int *>malloc((n_trks + 1) * sizeof(int))
 
+        # Ref: references/sort/sort.py#L215-L219 (for t, trk in enumerate(trks): predict + NaN check)
         for t in range(n_trks):
+            # Ref: references/sort/sort.py#L216 (pos = self.trackers[t].predict()[0])
             KalmanBoxTracker_predict(self._trackers[t], pred_bbox)
+            # Ref: references/sort/sort.py#L217 (trk[:] = [pos[0], pos[1], pos[2], pos[3], 0])
             for k in range(4):
                 trks[t * 4 + k] = pred_bbox[k]
+            # Ref: references/sort/sort.py#L218-L219 (if np.any(np.isnan(pos)): to_del.append(t))
             has_nan = 0
             for k in range(4):
                 if isnan(pred_bbox[k]):
@@ -451,6 +524,7 @@ cdef class Sort:
                 to_del[n_del] = t
                 n_del += 1
 
+        # Ref: references/sort/sort.py#L220-L222 (compress_rows + pop invalid trackers)
         # Remove invalid trackers
         for i in range(n_del - 1, -1, -1):
             t = to_del[i]
@@ -464,6 +538,7 @@ cdef class Sort:
         n_trks = <int>self._trackers.size()
         free(to_del)
 
+        # Ref: references/sort/sort.py#L223 (matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(...))
         # Associate detections to trackers
         min_dim = n_dets if n_dets < n_trks else n_trks
         match_a = <int *>malloc((min_dim + 1) * sizeof(int))
@@ -474,32 +549,41 @@ cdef class Sort:
                    match_a, match_b, &n_matches,
                    unmatched_d, &n_unmatched_d)
 
+        # Ref: references/sort/sort.py#L225-L227 (update matched trackers with assigned detections)
         # Update matched trackers with assigned detections
         for i in range(n_matches):
             d = match_a[i]
             t = match_b[i]
+            # Ref: references/sort/sort.py#L227 (self.trackers[m[1]].update(dets[m[0], :]))
             KalmanBoxTracker_update(self._trackers[t], &dets_bb[d * 4])
 
         free(match_a)
         free(match_b)
 
+        # Ref: references/sort/sort.py#L229-L232 (create and initialise new trackers for unmatched detections)
         # Create and initialize new trackers for unmatched detections
         for i in range(n_unmatched_d):
             d = unmatched_d[i]
+            # Ref: references/sort/sort.py#L231 (trk = KalmanBoxTracker(dets[i,:]))
             new_trk = <KalmanBoxTracker *>malloc(sizeof(KalmanBoxTracker))
             KalmanBoxTracker_init(new_trk, &dets_bb[d * 4], self.track_id_counter)
             self.track_id_counter += 1
+            # Ref: references/sort/sort.py#L232 (self.trackers.append(trk))
             self._trackers.push_back(new_trk)
 
         free(unmatched_d)
         free(trks)
 
+        # Ref: references/sort/sort.py#L233-L244 (collect output + remove dead tracklets)
         # Collect results and remove dead tracklets
         for idx in range(<int>self._trackers.size() - 1, -1, -1):
             tracker = self._trackers[idx]
+            # Ref: references/sort/sort.py#L235 (d = trk.get_state()[0])
             KalmanBoxTracker_get_state(tracker, state_bbox)
 
+            # Ref: references/sort/sort.py#L236-L237 (if time_since_update < 1 and (hit_streak >= min_hits or frame_count <= min_hits))
             if tracker.time_since_update < 1 and (tracker.hit_streak >= self._min_hits or self._frame_count <= self._min_hits):
+                # Ref: references/sort/sort.py#L237 (np.concatenate((d,[trk.id+1])))
                 # +1 as MOT benchmark requires positive IDs
                 output[n_output * 5 + 0] = state_bbox[0]
                 output[n_output * 5 + 1] = state_bbox[1]
@@ -508,6 +592,7 @@ cdef class Sort:
                 output[n_output * 5 + 4] = <double>(tracker.id + 1)
                 n_output += 1
 
+            # Ref: references/sort/sort.py#L240-L241 (if trk.time_since_update > self.max_age: self.trackers.pop(i))
             # Remove dead tracklet
             if tracker.time_since_update > self._max_age:
                 dead_indices.push_back(idx)

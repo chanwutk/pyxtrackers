@@ -13,6 +13,7 @@ cimport cython
 from libc.math cimport sqrt
 from libc.string cimport memset
 
+# Ref: references/bytetrack/kalman_filter.py#L40-L53 (KalmanFilter.__init__)
 # Initialize Kalman Filter with default parameters
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
@@ -36,6 +37,7 @@ cdef void kf_init(KalmanFilter *kf) noexcept nogil:
     memset(kf.motion_mat, 0, sizeof(double) * 64)
     memset(kf.update_mat, 0, sizeof(double) * 32)
 
+    # Ref: references/bytetrack/kalman_filter.py#L44-L46 — motion_mat = eye(8) with F[i, ndim+i] = dt
     # Initialize motion matrix (F) - identity with velocity terms
     # F = [[I, dt*I], [0, I]] where I is 4x4 identity
     for i in range(8):
@@ -48,6 +50,7 @@ cdef void kf_init(KalmanFilter *kf) noexcept nogil:
         for j in range(8):
             kf.F[i][j] = kf.motion_mat[i][j]
 
+    # Ref: references/bytetrack/kalman_filter.py#L47 — update_mat = eye(ndim, 2*ndim)
     # Initialize update matrix (H) - observation matrix
     # H = [I, 0] where I is 4x4 identity
     for i in range(4):
@@ -64,11 +67,13 @@ cdef void kf_init(KalmanFilter *kf) noexcept nogil:
     for i in range(4):
         kf.R[i][i] = 1.0
 
+    # Ref: references/bytetrack/kalman_filter.py#L52-L53 — std_weight_position = 1/20, std_weight_velocity = 1/160
     # Set standard deviation weights
     kf.std_weight_position = 1.0 / 20.0
     kf.std_weight_velocity = 1.0 / 160.0
 
 
+# Ref: references/bytetrack/kalman_filter.py#L55-L86 (initiate)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -84,12 +89,14 @@ cdef void kf_initiate(KalmanFilter *kf, double *measurement, double *mean_out, d
     cdef int i, j
     cdef double std[8]
 
+    # Ref: references/bytetrack/kalman_filter.py#L72-L74 — mean = [measurement, zeros(4)] (pos + zero velocity)
     # Initialize mean: [x, y, a, h, 0, 0, 0, 0]
     for i in range(4):
         mean_out[i] = measurement[i]
     for i in range(4, 8):
         mean_out[i] = 0.0
 
+    # Ref: references/bytetrack/kalman_filter.py#L76-L84 — std = [2*pos*h, 2*pos*h, 1e-2, 2*pos*h, 10*vel*h, ...]
     # Initialize covariance based on measurement uncertainty
     # std = [2*pos*h, 2*pos*h, 1e-2, 2*pos*h, 10*vel*h, 10*vel*h, 1e-5, 10*vel*h]
     std[0] = 2.0 * kf.std_weight_position * measurement[3]
@@ -101,6 +108,7 @@ cdef void kf_initiate(KalmanFilter *kf, double *measurement, double *mean_out, d
     std[6] = 1e-5
     std[7] = 10.0 * kf.std_weight_velocity * measurement[3]
 
+    # Ref: references/bytetrack/kalman_filter.py#L85 — covariance = diag(square(std))
     # Covariance = diag(std^2)
     for i in range(8):
         for j in range(8):
@@ -110,6 +118,7 @@ cdef void kf_initiate(KalmanFilter *kf, double *measurement, double *mean_out, d
                 cov_out[i * 8 + j] = 0.0
 
 
+# Ref: references/bytetrack/kalman_filter.py#L88-L124 (predict)
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -126,23 +135,27 @@ cdef void kf_predict(KalmanFilter *kf) noexcept nogil:
     cdef double std_vel[4]
     cdef double motion_cov[8][8]
 
+    # Ref: references/bytetrack/kalman_filter.py#L120 — mean = dot(mean, motion_mat.T)  [equivalent to F * x]
     # Predict mean: x = F * x
     for i in range(8):
         new_x[i] = 0.0
         for j in range(8):
             new_x[i] += kf.F[i][j] * kf.x[j]
 
+    # Ref: references/bytetrack/kalman_filter.py#L107-L111 — std_pos = [pos_w*h, pos_w*h, 1e-2, pos_w*h]
     # Compute motion covariance based on current state
     std_pos[0] = kf.std_weight_position * kf.x[3]
     std_pos[1] = kf.std_weight_position * kf.x[3]
     std_pos[2] = 1e-2
     std_pos[3] = kf.std_weight_position * kf.x[3]
 
+    # Ref: references/bytetrack/kalman_filter.py#L112-L116 — std_vel = [vel_w*h, vel_w*h, 1e-5, vel_w*h]
     std_vel[0] = kf.std_weight_velocity * kf.x[3]
     std_vel[1] = kf.std_weight_velocity * kf.x[3]
     std_vel[2] = 1e-5
     std_vel[3] = kf.std_weight_velocity * kf.x[3]
 
+    # Ref: references/bytetrack/kalman_filter.py#L117 — motion_cov = diag(square([std_pos, std_vel]))
     # Build motion covariance matrix
     for i in range(8):
         for j in range(8):
@@ -152,6 +165,7 @@ cdef void kf_predict(KalmanFilter *kf) noexcept nogil:
         motion_cov[i][i] = std_pos[i] * std_pos[i]
         motion_cov[i + 4][i + 4] = std_vel[i] * std_vel[i]
 
+    # Ref: references/bytetrack/kalman_filter.py#L121-L122 — covariance = F @ P @ F.T + motion_cov
     # Predict covariance: P = F * P * F^T + Q
     # First compute temp = F * P
     for i in range(8):
@@ -179,6 +193,9 @@ cdef void kf_predict(KalmanFilter *kf) noexcept nogil:
             kf.P[i][j] = new_P[i][j]
 
 
+# Ref: references/bytetrack/kalman_filter.py#L194-L226 (update)
+# Note: The Cython version uses simplified diagonal Kalman gain instead of
+# Cholesky solve (L216-220 in reference).
 @cython.boundscheck(False)  # type: ignore
 @cython.wraparound(False)  # type: ignore
 @cython.nonecheck(False)  # type: ignore
@@ -206,12 +223,15 @@ cdef void kf_update(KalmanFilter *kf, double *measurement) noexcept nogil:
     if measurement == NULL:
         return
 
+    # Ref: references/bytetrack/kalman_filter.py#L214 -> references/bytetrack/kalman_filter.py#L126-L153 (project): projected_mean, projected_cov = self.project(mean, cov)
+    # Ref: references/bytetrack/kalman_filter.py#L150 — projected_mean = H @ mean
     # Project state to measurement space: y = H * x
     for i in range(4):
         projected_mean[i] = 0.0
         for j in range(8):
             projected_mean[i] += kf.H[i][j] * kf.x[j]
 
+    # Ref: references/bytetrack/kalman_filter.py#L143-L148 — innovation_cov std = [pos_w*h, pos_w*h, 1e-1, pos_w*h]
     # Compute innovation covariance based on current height
     std[0] = kf.std_weight_position * kf.x[3]
     std[1] = kf.std_weight_position * kf.x[3]
@@ -224,6 +244,7 @@ cdef void kf_update(KalmanFilter *kf, double *measurement) noexcept nogil:
     for i in range(4):
         innovation_cov[i][i] = std[i] * std[i]
 
+    # Ref: references/bytetrack/kalman_filter.py#L151-L152 — projected_cov = H @ P @ H.T
     # Compute projected covariance: S = H * P * H^T
     # temp1 = H * P
     for i in range(4):
@@ -239,11 +260,14 @@ cdef void kf_update(KalmanFilter *kf, double *measurement) noexcept nogil:
             for k in range(8):
                 projected_cov[i][j] += temp1[i][k] * kf.H[j][k]  # H^T[k][j] = H[j][k]
 
+    # Ref: references/bytetrack/kalman_filter.py#L153 — return mean, covariance + innovation_cov
     # Add innovation covariance
     for i in range(4):
         for j in range(4):
             projected_cov[i][j] += innovation_cov[i][j]
 
+    # Ref: references/bytetrack/kalman_filter.py#L216-L220 — Kalman gain via Cholesky solve in reference;
+    # here simplified with diagonal assumption: K = P * H^T / diag(S)
     # Compute Kalman gain: K = P * H^T * S^(-1)
     # For simplicity, we use a pseudo-inverse approximation
     # temp2 = P * H^T
@@ -258,16 +282,19 @@ cdef void kf_update(KalmanFilter *kf, double *measurement) noexcept nogil:
         for j in range(4):
             kalman_gain[i][j] = temp2[i][j] / (projected_cov[j][j] + 1e-9)
 
+    # Ref: references/bytetrack/kalman_filter.py#L221 — innovation = measurement - projected_mean
     # Compute innovation
     for i in range(4):
         innovation[i] = measurement[i] - projected_mean[i]
 
+    # Ref: references/bytetrack/kalman_filter.py#L223 — new_mean = mean + dot(innovation, kalman_gain.T)
     # Update mean: x = x + K * innovation
     for i in range(8):
         new_mean[i] = kf.x[i]
         for j in range(4):
             new_mean[i] += kalman_gain[i][j] * innovation[j]
 
+    # Ref: references/bytetrack/kalman_filter.py#L224-L225 — new_cov = cov - K @ projected_cov @ K.T
     # Update covariance: P = P - K * S * K^T
     # temp_cov1 = K * S
     for i in range(8):

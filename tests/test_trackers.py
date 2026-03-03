@@ -11,6 +11,7 @@ against the same reference, with relaxed tolerance for text-serialized output.
 
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -32,6 +33,14 @@ TRACKER_TOLERANCE = {
     "OC-SORT": None,
     "ByteTrack": 1e-6,
 }
+
+# On macOS Intel with Python 3.10, SORT can have tiny floating-point drift.
+if (
+    sys.platform == "darwin"
+    and platform.machine() == "x86_64"
+    and sys.version_info[:2] == (3, 10)
+):
+    TRACKER_TOLERANCE["SORT"] = 1e-10
 
 _PERF_RECORDS: list[dict] = []
 

@@ -40,7 +40,7 @@ if (
     and platform.machine() == "x86_64"
     and sys.version_info[:2] == (3, 10)
 ):
-    TRACKER_TOLERANCE["SORT"] = 1e-10
+    TRACKER_TOLERANCE["SORT"] = 1e-16
 
 _PERF_RECORDS: list[dict] = []
 
